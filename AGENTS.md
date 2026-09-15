@@ -27,6 +27,11 @@ headless automation.
 - Conventional commits: `type(scope): description`
   - Types: feat, fix, docs, refactor, test, ci, chore
   - Scopes: daemon, mobile, shared, infra, docs
+- Branch flow (every task): feature branch → staging → main (eventually)
+  1. Create a new branch per task: `git switch -c feat/<scope>-<desc>`
+  2. Commit the task's work on that branch
+  3. Merge into `staging`: `git switch staging && git merge <branch>`
+  4. Promote `staging` to `main` only when deliberately releasing (not automatically)
 - No commits without user permission
 - No force-push, no interactive rebase unless asked
 - Small, reviewable commits

@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from kaow.adapters.base import CLIAdapter
     from kaow.display.base import DisplayManager
     from kaow.queue.memory import TaskQueue
+    from kaow.relay.coordinator import RelayCoordinator
     from kaow.telemetry.collector import TelemetryCollector
 
 logger = logging.getLogger(__name__)
@@ -76,14 +77,47 @@ class KAOWServer:
         display: DisplayManager,
         telemetry: TelemetryCollector,
         task_queue: TaskQueue,
+        relay: RelayCoordinator | None = None,
     ) -> None:
         self._auth_token = auth_token
         self._adapter = adapter
         self._display = display
         self._telemetry = telemetry
         self._task_queue = task_queue
+        self._relay = relay
         self._connections = ConnectionManager()
         self._active_tasks: dict[str, asyncio.Task[None]] = {}
+
+        if relay is not None:
+            relay.set_hook(self._bridge_relay_event)
+
+    async def _bridge_relay_event(self, event: str, payload: dict[str, Any]) -> None:
+        """Adapt relay events into WebSocket messages for local clients.
+
+        Called by RelayCoordinator via its internal _notify hook.
+        """
+        command_id = str(payload.get("command_id", ""))
+        if event == "command_accepted":
+            msg = self._task_queued_message(command_id)
+            await self._connections.broadcast(msg)
+        elif event == "command_status":
+            status = TaskStatus(payload.get("status", "running"))
+            output = WSMessage.command_output(
+                CommandOutputPayload(task_id=command_id, stream="", done=True, status=status)
+            )
+            await self._connections.broadcast(output)
+        elif event == "command_output":
+            chunk = str(payload.get("chunk", ""))
+            output = WSMessage.command_output(
+                CommandOutputPayload(task_id=command_id, stream=chunk, done=False)
+            )
+            await self._connections.broadcast(output)
+
+    def _task_queued_message(self, task_id: str) -> WSMessage:
+        """Build a task_queued confirmation message for a relay command."""
+        from kaow.server.protocol import TaskQueuedPayload
+
+        return WSMessage.task_queued(TaskQueuedPayload(task_id=task_id, queue_position=0))
 
     @property
     def app(self) -> FastAPI:
