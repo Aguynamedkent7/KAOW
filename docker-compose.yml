@@ -1,0 +1,19 @@
+version: "3.8"
+
+services:
+  daemon:
+    build:
+      context: ./daemon
+      dockerfile: Dockerfile
+    ports:
+      - "${KAOW_PORT:-8765}:${KAOW_PORT:-8765}"
+    env_file:
+      - .env
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${KAOW_PORT:-8765}/docs')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
