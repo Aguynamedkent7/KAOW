@@ -1,0 +1,1 @@
+# KAOW release minification is disabled. Rules are added here when it is enabled.

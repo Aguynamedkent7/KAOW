@@ -3,8 +3,10 @@
 ## Snapshot
 - **Goal**: Build KAOW — phone-controlled PC daemon wrapping AI CLIs
 - **Current Phase**: Phase 2 — Cloud Relay + Mobile App
-- **Now**: Phase 2 daemon relay shipped; mobile app deferred until Android toolchain installed
-- **Next**: Install Android SDK/JDK (`mobile/SETUP_TOOLCHAIN.md`), scaffold mobile project, run compile verification
+- **Now**: Mobile app skeleton compiles (`:app:assembleDebug` GREEN); next is a
+  Supabase-connected run (needs project URL + anon key via `-P` gradle props)
+- **Next**: Install app on device/emulator, connect to staged Supabase project,
+  verify chat → daemon → screenshots round-trip
 - **Constraints**: 300 LOC/file, modular-first, no silent failures, container-first
 
 ## Plans Log
@@ -27,6 +29,8 @@
 - D-202 ACTIVE: Daemon uses service_role key to bypass RLS; mobile uses anon key [CODE] 2026-09-15
 - D-203 ACTIVE: Screenshots stored as base64 in command_outputs/supabase; revisit Storage in Phase 3+ [CODE] 2026-09-15
 - D-204 ACTIVE: register_device RPC is SECURITY DEFINER (upsert by user_id + name) [CODE] 2026-09-15
+- D-206 ACTIVE: Mobile pins Compose BOM 2026.06.01, core-ktx 1.18.0, lifecycle 2.10.0,
+  compileSdk 36 (newer androidx needs AGP 9.1 + compileSdk 37) [CODE] 2026-09-16
 
 ## Progress Log
 - 2026-09-15 [CODE]: Git repo initialized, .gitignore, LICENSE, .env.example
@@ -65,6 +69,22 @@
 - 2026-09-15 [CODE]: .env.example updated with KAOW_RELAY_MODE / KAOW_SUPABASE_* / KAOW_DEVICE_* vars
 - 2026-09-15 [CODE]: test_relay.py added (48 total tests passing, ruff + mypy clean)
 - 2026-09-15 [CODE]: mobile/SETUP_TOOLCHAIN.md created — Android SDK + JDK install steps for Arch Linux
+- 2026-09-16 [CODE]: Android toolchain installed/verified — JDK 17, adb, platform-35, build-tools 34
+- 2026-09-16 [CODE]: SETUP_TOOLCHAIN.md §4 updated for fish shell (user's shell is fish, not bash)
+- 2026-09-16 [CODE]: Android platform-36 installed; tools + `mobile/` scaffold. Wrapper gen with
+  Gradle 8.14.2. libs.versions.toml pinned: AGP 8.13.2, Kotlin 2.4.20, BOM 2026.06.01,
+  core-ktx 1.18.0, lifecycle 2.10.0, supabase-kt 3.8.0, ktor 3.5.2
+- 2026-09-16 [CODE]: mobile/ build files (settings/build/gradle.properties), manifest, res
+  (M3 dark theme, adaptive launcher), data layer (Dtos, UiModels, KaowSupabase,
+  Auth/Device/Chat/Dashboard repos), UI (KaowRoot auth gate + 3-tab shell, Login,
+  Chat (VM+screen), Dashboard (VM+screen), Power placeholder, shared screens)
+- 2026-09-16 [CODE]: First build failed on androidx/compileSdk mismatch (BOM 2026.09.00 →
+  ui 1.12.1 needs AGP 9.1/compileSdk 37); pinned down to BOM 2026.06.01 (ui 1.11.x).
+  Fixed supabase-kt 3.8.0 API drift: Email → providers.builtin.Email,
+  decodeList/decodeSingle are `PostgrestResult` members (drop imports),
+  realtime via `client.realtime` + `channel(...)` imports, `HasRecord.decodeRecord<T>()`
+- 2026-09-16 [CODE]: `:app:assembleDebug` GREEN — app-debug.apk (16 MB). BUILT against
+  empty Supabase creds; app shows ConfigErrorScreen until -P vars provided.
 
 ## Discoveries Log
 - 2026-09-15 [TOOL]: `loop.run_in_executor(loop, func, kwarg=...)` does NOT forward kwargs —

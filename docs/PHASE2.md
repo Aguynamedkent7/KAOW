@@ -4,7 +4,7 @@
 Set up Supabase for auth and real-time command routing, build the Kotlin/Jetpack
 Compose mobile app, and test bidirectional communication over the internet.
 
-## Status: IN PROGRESS (daemon relay shipped, mobile pending toolchain)
+## Status: IN PROGRESS (daemon relay shipped, mobile skeleton compiles)
 
 ## Completed Tasks
 - [x] Design database schema (devices, commands, command_outputs, screenshots)
@@ -20,13 +20,15 @@ Compose mobile app, and test bidirectional communication over the internet.
 - [x] Wire relay into `KAOWServer` + `main.py` (modes: local / cloud / both)
 - [x] Bridge hook: cloud commands stream to local WebSocket clients (BOTH mode)
 - [x] Tests: `tests/test_relay.py` (48 total passing, ruff + mypy clean)
+- [x] Install Android toolchain (see `mobile/SETUP_TOOLCHAIN.md`) — JDK 17, adb,
+      platform-36, build-tools 34 on Arch; env vars in fish config
+- [x] Build mobile app skeleton (Kotlin + Jetpack Compose) — auth, chat, dashboard,
+      power tabs; `./gradlew :app:assembleDebug` GREEN (`app-debug.apk`, 16 MB)
 
 ## Planned Tasks
-- [ ] Install Android toolchain (see `mobile/SETUP_TOOLCHAIN.md`)
-- [ ] Build mobile app skeleton (Kotlin + Jetpack Compose)
-- [ ] Implement chat interface (text/voice input)
-- [ ] Implement live dashboard (screenshots, terminal logs)
-- [ ] Connect mobile app to daemon via Supabase relay
+- [ ] Implement chat interface (text/voice input) in Supabase-connected run
+- [ ] Implement live dashboard (screenshots, terminal logs) in Supabase-connected run
+- [ ] Connect mobile app to daemon via Supabase relay (real project creds)
 - [ ] Test bidirectional communication outside local network
 - [ ] Implement conversation history persistence
 - [ ] E2E encryption for screenshots and logs
@@ -55,3 +57,6 @@ Compose mobile app, and test bidirectional communication over the internet.
 - D-205 ACTIVE: Relay integration reuses the same CLI adapter + display; local WS
   path unchanged. Device pairing (device_user_id) lands with QR pairing (Phase 6).
   [CODE] 2026-09-15
+- D-206 ACTIVE: Mobile pins Compose BOM 2026.06.01 (ui 1.11.x) + core-ktx 1.18.0 +
+  lifecycle 2.10.0 to stay within AGP 8.13.2 / compileSdk 36 (newer androidx
+  artifacts require AGP 9.1 + compileSdk 37). [CODE] 2026-09-16
