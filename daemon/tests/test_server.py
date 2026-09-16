@@ -30,9 +30,7 @@ class TestWSMessage:
 
     def test_command_output_message(self) -> None:
         """Command output message includes task_id and done flag."""
-        payload = CommandOutputPayload(
-            task_id="task-1", stream="output text", done=False
-        )
+        payload = CommandOutputPayload(task_id="task-1", stream="output text", done=False)
         msg = WSMessage.command_output(payload)
         assert msg.type == MessageType.COMMAND_OUTPUT
         assert msg.payload["task_id"] == "task-1"

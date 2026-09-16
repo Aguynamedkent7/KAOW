@@ -8,6 +8,7 @@ import pytest
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
+    from pathlib import Path
 from fastapi.testclient import TestClient
 
 from kaow.adapters.base import CLIAdapter
@@ -15,6 +16,7 @@ from kaow.display.base import DisplayManager
 from kaow.queue.memory import TaskQueue
 from kaow.server.app import KAOWServer
 from kaow.telemetry.collector import TelemetryCollector
+from kaow.transcript.sqlite import SqliteTranscriptStore
 
 AUTH_TOKEN = "integration-test-token"
 
@@ -55,7 +57,7 @@ class FakeDisplay(DisplayManager):
 
 
 @pytest.fixture
-def server() -> KAOWServer:
+def server(tmp_path: Path) -> KAOWServer:
     """Create a KAOWServer with fake components."""
     return KAOWServer(
         auth_token=AUTH_TOKEN,
@@ -63,6 +65,7 @@ def server() -> KAOWServer:
         display=FakeDisplay(),
         telemetry=TelemetryCollector(),
         task_queue=TaskQueue(),
+        transcript=SqliteTranscriptStore(str(tmp_path)),
     )
 
 
@@ -158,3 +161,25 @@ class TestScreenshot:
             response = ws.receive_json()
             assert response["type"] == "screenshot"
             assert response["payload"]["image"] == "fake-base64-screenshot"
+
+
+class TestHistory:
+    """Tests for local transcript persistence over the WebSocket."""
+
+    def test_command_persisted_in_history(self, client: TestClient) -> None:
+        """A completed command appears in the history_result."""
+        with client.websocket_connect(f"/ws?token={AUTH_TOKEN}") as ws:
+            ws.send_json({"type": "command", "payload": {"prompt": "persistence check"}})
+            # Consume: running, chunk, done
+            for _ in range(3):
+                ws.receive_json()
+
+            ws.send_json({"type": "history", "payload": {"limit": 10}})
+            history = ws.receive_json()
+            assert history["type"] == "history_result"
+            entries = history["payload"]["entries"]
+            assert len(entries) >= 1
+            entry = entries[-1]
+            assert entry["prompt"] == "persistence check"
+            assert entry["output"] == "echo: persistence check\n"
+            assert entry["status"] == "completed"

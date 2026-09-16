@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
+from kaow.config import CaptureMode
 from kaow.display.base import DisplayManager
 from kaow.display.xvfb import XvfbDisplay
 from kaow.queue.memory import TaskQueue
@@ -38,6 +41,56 @@ class TestXvfbDisplay:
         """Display variable returns correct format."""
         display = XvfbDisplay()
         assert display.display_var == ":99"
+
+    def test_capture_mode_default(self) -> None:
+        """Default capture mode is AUTO."""
+        display = XvfbDisplay()
+        assert display._capture_mode == CaptureMode.AUTO
+
+    def test_capture_mode_custom(self) -> None:
+        """Custom capture mode is stored."""
+        display = XvfbDisplay(capture_mode=CaptureMode.VIRTUAL)
+        assert display._capture_mode == CaptureMode.VIRTUAL
+
+    def test_detect_real_display_no_env(self) -> None:
+        """Detect returns None when DISPLAY is unset."""
+        display = XvfbDisplay()
+        with pytest.MonkeyPatch.context() as m:
+            m.delenv("DISPLAY", raising=False)
+            result = display._detect_real_display()
+        assert result is None
+
+    def test_detect_real_display_same_as_virtual(self) -> None:
+        """Detect ignores DISPLAY if it matches our virtual display."""
+        display = XvfbDisplay()
+        with pytest.MonkeyPatch.context() as m:
+            m.setenv("DISPLAY", display.display_var)
+            result = display._detect_real_display()
+        assert result is None
+
+    def test_detect_real_display_valid(self) -> None:
+        """Detect returns DISPLAY when a real X11 socket is present."""
+        display = XvfbDisplay()
+        with pytest.MonkeyPatch.context() as m:
+            m.setenv("DISPLAY", ":0")
+            real_exists = os.path.exists
+
+            def fake_exists(path: str) -> bool:
+                if path == "/tmp/.X11-unix/X0":
+                    return True
+                return real_exists(path)
+
+            m.setattr(os.path, "exists", fake_exists)
+            result = display._detect_real_display()
+        assert result == ":0"
+
+    def test_detect_real_display_wrong_number(self) -> None:
+        """Detect ignores non-existent X11 sockets."""
+        display = XvfbDisplay()
+        with pytest.MonkeyPatch.context() as m:
+            m.setenv("DISPLAY", ":42")
+            result = display._detect_real_display()
+        assert result is None
 
 
 class TestTaskQueue:

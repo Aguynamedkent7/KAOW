@@ -25,7 +25,7 @@ class TaskQueue:
     """Simple in-memory FIFO task queue.
 
     Buffers commands when no client is connected, replays them on reconnect.
-    Phase 2 will replace this with Supabase-backed persistence.
+    Command history is persisted locally in the SQLite transcript store.
     """
 
     def __init__(self, max_size: int = 100) -> None:

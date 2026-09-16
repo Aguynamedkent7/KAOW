@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import shutil
 import signal
 
+from kaow.config import CaptureMode
 from kaow.display.base import DisplayError, DisplayManager
-from kaow.display.screenshot import capture_x11_screenshot
+from kaow.display.screenshot import capture_screenshot, capture_x11_screenshot
 
 logger = logging.getLogger(__name__)
 
@@ -18,15 +20,23 @@ class XvfbDisplay(DisplayManager):
     """Virtual display manager using Xvfb (X Virtual Framebuffer).
 
     Manages the lifecycle of an Xvfb process and provides screenshot
-    capture from the virtual framebuffer.
+    capture. In AUTO mode, screenshots come from the user's real display
+    when one is visible, falling back to the virtual framebuffer.
     """
 
-    def __init__(self, width: int = 1920, height: int = 1080) -> None:
+    def __init__(
+        self,
+        width: int = 1920,
+        height: int = 1080,
+        capture_mode: CaptureMode = CaptureMode.AUTO,
+    ) -> None:
         self._width = width
         self._height = height
+        self._capture_mode = capture_mode
         self._process: asyncio.subprocess.Process | None = None
         self._display_num: int = 99
         self._started = False
+        self._real_display: str | None = None
 
     @property
     def is_running(self) -> bool:
@@ -60,10 +70,14 @@ class XvfbDisplay(DisplayManager):
         cmd = [
             "Xvfb",
             display_addr,
-            "-screen", "0", f"{self._width}x{self._height}x24",
+            "-screen",
+            "0",
+            f"{self._width}x{self._height}x24",
             "-ac",
-            "+extension", "GLX",
-            "+render", "-noreset",
+            "+extension",
+            "GLX",
+            "+render",
+            "-noreset",
         ]
 
         logger.info("Starting Xvfb: %s", " ".join(cmd))
@@ -86,9 +100,34 @@ class XvfbDisplay(DisplayManager):
                 f"{stderr.decode(errors='replace')}"
             )
 
+        self._real_display = self._detect_real_display()
         os.environ["DISPLAY"] = display_addr
         self._started = True
         logger.info("Xvfb started on %s (%dx%d)", display_addr, self._width, self._height)
+        if self._real_display is not None:
+            logger.info("Real display detected for capture fallback: %s", self._real_display)
+
+    def _detect_real_display(self) -> str | None:
+        """Detect a live, non-virtual X11 display from the ambient DISPLAY env.
+
+        Only set before Xvfb clobbers the environment; requires a socket in
+        /tmp/.X11-unix that is not the Xvfb display itself.
+
+        Returns:
+            The DISPLAY value (e.g. ":0") or None if nothing usable is visible.
+        """
+        ambient = os.environ.get("DISPLAY")
+        if not ambient:
+            return None
+        match = re.fullmatch(r":(\d+)", ambient)
+        if not match:
+            return None
+        number = int(match.group(1))
+        if number == self._display_num:
+            return None
+        if os.path.exists(f"/tmp/.X11-unix/X{number}"):
+            return ambient
+        return None
 
     async def stop(self) -> None:
         """Stop the Xvfb process and clean up."""
@@ -129,16 +168,36 @@ class XvfbDisplay(DisplayManager):
             await self.start()
 
     async def capture_screenshot(self) -> str:
-        """Capture the current Xvfb framebuffer as base64 PNG.
+        """Capture the current screen as base64 PNG.
+
+        Honors the configured capture mode: virtual, real, or auto
+        (real display first, Xvfb as fallback). Uses grim for Wayland
+        and X11 methods for X11 sessions.
 
         Returns:
             Base64-encoded PNG image string.
 
         Raises:
-            DisplayError: If capture fails or display is not running.
+            DisplayError: If capture fails for the requested mode.
         """
         if not self.is_running:
             raise DisplayError("Cannot capture screenshot: Xvfb is not running")
+
+        if self._capture_mode is CaptureMode.VIRTUAL:
+            return await capture_x11_screenshot(self.display_var, self._width, self._height)
+
+        if self._capture_mode is CaptureMode.REAL:
+            if self._real_display is None:
+                raise DisplayError(
+                    "CaptureMode.REAL requires a visible real display, none detected"
+                )
+            return await capture_screenshot(self._real_display, self._width, self._height)
+
+        if self._real_display is not None:
+            try:
+                return await capture_screenshot(self._real_display, self._width, self._height)
+            except DisplayError as exc:
+                logger.warning("Real display capture failed, using virtual: %s", exc)
 
         return await capture_x11_screenshot(self.display_var, self._width, self._height)
 

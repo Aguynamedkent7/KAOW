@@ -1,100 +1,72 @@
 # Phase 6 — Secure Terminal QR Pairing
 
 ## Goal
-Securely link a physical PC to the authenticated mobile app WITHOUT requiring the user to type credentials on the headless machine.
+Link a physical PC to the mobile app without typing credentials on the headless
+machine. The base version shipped early (with Phase 2) because no cloud backend
+exists to broker pairing — the tailnet IS the trust boundary.
 
-## Status: PLANNED
+## Status: IN PROGRESS (base pairing shipped; hardening pending)
 
 ## Problem
 Headless PCs have no easy way to input credentials. Typing a token over SSH is
-tedious and insecure. QR code pairing solves both problems.
+tedious and insecure. QR pairing solves both problems.
 
-## The Handshake Protocol
+## The Handshake Protocol (shipped)
 
 ### Actors
 | Actor | Role |
 |-------|------|
-| PC (installer) | Generates QR, listens for authorization |
-| Mobile app | Scans QR, sends pairing request |
-| Supabase backend | Validates + registers the binding |
+| PC (daemon) | Generates QR, serves the WebSocket |
+| Mobile app | Scans QR, stores the pairing, connects over the tailnet |
 
 ### Sequence
 
 ```
- PC (terminal)          Mobile App             Supabase
-     |                      |                     |
-     |  1. Generate QR      |                     |
-     |  {device_id,        |                     |
-     |   pairing_secret}    |                     |
-     |  print to terminal   |                     |
-     |                      |  2. Scan QR        |
-     |                      |  open app,         |
-     |                      |  tap "Add Device"  |
-     |                      |                     |
-     |                      |  3. POST pairing   |
-     |                      |  {device_id,        |
-     |                      |   secret,           |
-     |                      |   user_id} -------->|
-     |                      |                     |  4. Verify secret
-     |                      |                     |  register device
-     |                      |                     |  to user account
-     |<-- 5. Realtime -----|  broadcast "success" |
-     |    "success" event   |                     |
-     |    receive user_id   |                     |
-     |                      |                     |
-     |  6. Cleanup          |                     |
-     |  clear QR output     |                     |
-     |  save user_id to     |                     |
-     |  local config        |                     |
-     |  restart into        |                     |
-     |  headless worker     |                     |
-     |        mode          |                     |
+ PC (terminal)          Mobile App
+     |                      |
+     |  1. `kaow pair`      |
+     |  print QR:           |
+     |  ws://<addr>:<port>/ws?token=<auth_token>
+     |                      |
+     |                      |  2. Scan QR
+     |                      |  parse URL + token
+     |                      |
+     |                      |  3. Connect ws://...
+     |  <---- WebSocket ----|  (WireGuard-encrypted)
+     |                      |
+     |  4. Daemon serves     |
+     |  chat/screenshots     |
 ```
 
 ### Step Details
 
 1. **Terminal QR Generation**
-   - Installer script uses a CLI QR library (e.g., `qrcode-terminal` using ANSI blocks)
-   - Payload: `{"device_id": "uuid-here", "secret": "temp-secret-here"}`
+   - `kaow pair` (daemon/src/kaow/pair.py) detects the Tailscale IP local
+     interface (100.64.0.0/10, iface name "tailscale"), builds
+     `ws://<address>:<port>/ws?token=<auth_token>`, prints an ASCII QR via the
+     `qrcode` Python lib plus the manual URL/token.
+2. **Mobile Scan**
+   - Mobile app PairScreen uses ZXing (`ScanContract`) to read the QR.
+   - Manual entry fallback (base URL + token) for remote SSH users.
+3. **Store & Connect**
+   - App saves `{base_url, auth_token}` in SharedPreferences and connects the
+     WebSocket directly over the tailnet; status banner shows connecting /
+     connected / unreachable with Retry + Re-pair.
 
-2. **Socket Listen**
-   - PC daemon temporarily connects to a Supabase Realtime channel keyed by `device_id`
-   - Listens for an authorization payload
-
-3. **Mobile Scan**
-   - User opens the KAOW Jetpack Compose app
-   - Taps "Add Device"
-   - Scans the terminal screen
-
-4. **Cloud Handshake**
-   - Mobile app sends `device_id`, `pairing_secret`, and the authenticated `user_id` to Supabase backend
-
-5. **Validation & Lock**
-   - Backend verifies the secret matches
-   - If valid: registers the PC to the user's account in the database
-   - Broadcasts a "success" event down the realtime socket to the waiting PC
-   - Mobile app shows paired state
-
-6. **Cleanup & Boot**
-   - PC receives success signal containing `user_id`
-   - Clears QR code from terminal
-   - Saves `user_id` to local config
-   - Restarts into silent headless worker mode
-
-## Security Considerations
-- `pairing_secret` is single-use — expires after first successful (or failed) handshake
-- Binding is one-to-one: a PC pairs to exactly one authenticated user
-- QR must degrade gracefully if the pairing command itself is a risk to run unattended
-- Backend must rate-limit pairing attempts to prevent brute-force of the secret
+## Hardening Pending (future)
+- Single-use rotation: `kaow pair` rotates the auth token on each run and the
+  mobile app re-pairs (rather than reconnecting forever).
+- Pairing attestation: prove the token holder also controls the tailnet before
+  the token can be crossed with another device.
+- Out-of-band confirmation: PSK-derived proof presented on both ends of pairing.
+- QR must degrade gracefully if the pairing command itself is a risk to run
+  unattended.
 
 ## Deliverables
-- `daemon/scripts/pairing.py` — QR render + realtime listener + lifecycle
-- Supabase table `devices` + RLS policies + pairing RPC
-- Mobile "Add Device" screen with camera/scanner integration
+- `daemon/src/kaow/pair.py` — QR render + tailnet address detection
+- `mobile` PairScreen — camera scanner + manual entry + persisted pairing
+- Mobile `net/DirectRelay` — token-authenticated WebSocket with reconnect/backoff
 
 ## Dependencies
-- Phase 2 complete (Supabase auth + realtime)
-- Phase 5 complete (installer invokes pairing mode)
-
-## Decisions
-(Pending — will be added during Phase 6 implementation)
+- Tailscale tailnet (free tier: 3 devices) enrolled on phone + PC
+- Phase 2 direct-WS transport (WireGuard replaces the cloud broker entirely)

@@ -14,6 +14,9 @@ from kaow.server.protocol import (
     CommandOutputPayload,
     CommandPayload,
     ErrorPayload,
+    HistoryEntry,
+    HistoryPayload,
+    HistoryResultPayload,
     KillPayload,
     MessageType,
     TaskStatus,
@@ -24,8 +27,8 @@ if TYPE_CHECKING:
     from kaow.adapters.base import CLIAdapter
     from kaow.display.base import DisplayManager
     from kaow.queue.memory import TaskQueue
-    from kaow.relay.coordinator import RelayCoordinator
     from kaow.telemetry.collector import TelemetryCollector
+    from kaow.transcript.sqlite import SqliteTranscriptStore
 
 logger = logging.getLogger(__name__)
 
@@ -77,47 +80,16 @@ class KAOWServer:
         display: DisplayManager,
         telemetry: TelemetryCollector,
         task_queue: TaskQueue,
-        relay: RelayCoordinator | None = None,
+        transcript: SqliteTranscriptStore,
     ) -> None:
         self._auth_token = auth_token
         self._adapter = adapter
         self._display = display
         self._telemetry = telemetry
         self._task_queue = task_queue
-        self._relay = relay
+        self._transcript = transcript
         self._connections = ConnectionManager()
         self._active_tasks: dict[str, asyncio.Task[None]] = {}
-
-        if relay is not None:
-            relay.set_hook(self._bridge_relay_event)
-
-    async def _bridge_relay_event(self, event: str, payload: dict[str, Any]) -> None:
-        """Adapt relay events into WebSocket messages for local clients.
-
-        Called by RelayCoordinator via its internal _notify hook.
-        """
-        command_id = str(payload.get("command_id", ""))
-        if event == "command_accepted":
-            msg = self._task_queued_message(command_id)
-            await self._connections.broadcast(msg)
-        elif event == "command_status":
-            status = TaskStatus(payload.get("status", "running"))
-            output = WSMessage.command_output(
-                CommandOutputPayload(task_id=command_id, stream="", done=True, status=status)
-            )
-            await self._connections.broadcast(output)
-        elif event == "command_output":
-            chunk = str(payload.get("chunk", ""))
-            output = WSMessage.command_output(
-                CommandOutputPayload(task_id=command_id, stream=chunk, done=False)
-            )
-            await self._connections.broadcast(output)
-
-    def _task_queued_message(self, task_id: str) -> WSMessage:
-        """Build a task_queued confirmation message for a relay command."""
-        from kaow.server.protocol import TaskQueuedPayload
-
-        return WSMessage.task_queued(TaskQueuedPayload(task_id=task_id, queue_position=0))
 
     @property
     def app(self) -> FastAPI:
@@ -163,7 +135,10 @@ class KAOWServer:
 
             if not isinstance(msg_data, dict) or "type" not in msg_data:
                 error = WSMessage.error(
-                    ErrorPayload(message="Message must be an object with a 'type' field", code="INVALID_MESSAGE")
+                    ErrorPayload(
+                        message="Message must be an object with a 'type' field",
+                        code="INVALID_MESSAGE",
+                    )
                 )
                 await websocket.send_text(error.to_json())
                 continue
@@ -172,7 +147,9 @@ class KAOWServer:
                 msg_type = MessageType(msg_data["type"])
             except ValueError:
                 error = WSMessage.error(
-                    ErrorPayload(message=f"Unknown message type: {msg_data['type']}", code="UNKNOWN_TYPE")
+                    ErrorPayload(
+                        message=f"Unknown message type: {msg_data['type']}", code="UNKNOWN_TYPE"
+                    )
                 )
                 await websocket.send_text(error.to_json())
                 continue
@@ -192,11 +169,15 @@ class KAOWServer:
                 await self._handle_screenshot(msg_id)
             elif msg_type == MessageType.KILL:
                 await self._handle_kill(payload)
+            elif msg_type == MessageType.HISTORY:
+                await self._handle_history(payload, msg_id, websocket)
             elif msg_type == MessageType.PING:
                 await websocket.send_text(WSMessage.pong(msg_id).to_json())
             else:
                 error = WSMessage.error(
-                    ErrorPayload(message=f"Unhandled message type: {msg_type}", code="UNKNOWN_TYPE"),
+                    ErrorPayload(
+                        message=f"Unhandled message type: {msg_type}", code="UNKNOWN_TYPE"
+                    ),
                     msg_id=msg_id,
                 )
                 await websocket.send_text(error.to_json())
@@ -213,26 +194,61 @@ class KAOWServer:
             await self._connections.broadcast(error)
             return
 
+        try:
+            await asyncio.to_thread(self._transcript.record_command, cmd.task_id, cmd.prompt)
+        except Exception as exc:
+            logger.exception("Failed to persist command: %s", cmd.task_id)
+            error = WSMessage.error(
+                ErrorPayload(
+                    message=f"Failed to persist command: {exc}", code="PERSISTENCE_FAILED"
+                ),
+                msg_id=msg_id,
+            )
+            await self._connections.broadcast(error)
+
         task = asyncio.create_task(self._run_command(cmd, msg_id))
         self._active_tasks[cmd.task_id] = task
         task.add_done_callback(lambda t: self._active_tasks.pop(cmd.task_id, None))
 
     async def _run_command(self, cmd: CommandPayload, msg_id: str) -> None:
         """Execute a command through the CLI adapter and stream output."""
+        seq = 0
         try:
             output = WSMessage.command_output(
-                CommandOutputPayload(task_id=cmd.task_id, stream="", done=False, status=TaskStatus.RUNNING),
+                CommandOutputPayload(
+                    task_id=cmd.task_id, stream="", done=False, status=TaskStatus.RUNNING
+                ),
                 msg_id=msg_id,
             )
             await self._connections.broadcast(output)
 
             async for chunk in self._adapter.execute(cmd.prompt):
+                try:
+                    await asyncio.to_thread(self._transcript.append_output, cmd.task_id, chunk, seq)
+                    seq += 1
+                except Exception as exc:
+                    logger.exception("Failed to persist output chunk: %s", cmd.task_id)
+                    error = WSMessage.error(
+                        ErrorPayload(
+                            message=f"Failed to persist output: {exc}",
+                            code="PERSISTENCE_FAILED",
+                            task_id=cmd.task_id,
+                        ),
+                        msg_id=msg_id,
+                    )
+                    await self._connections.broadcast(error)
                 output = WSMessage.command_output(
                     CommandOutputPayload(task_id=cmd.task_id, stream=chunk, done=False),
                     msg_id=msg_id,
                 )
                 await self._connections.broadcast(output)
 
+            await asyncio.to_thread(
+                self._transcript.update_status,
+                cmd.task_id,
+                TaskStatus.COMPLETED.value,
+                completed=True,
+            )
             done = WSMessage.command_output(
                 CommandOutputPayload(
                     task_id=cmd.task_id, stream="", done=True, status=TaskStatus.COMPLETED
@@ -241,6 +257,12 @@ class KAOWServer:
             )
             await self._connections.broadcast(done)
         except asyncio.CancelledError:
+            await asyncio.to_thread(
+                self._transcript.update_status,
+                cmd.task_id,
+                TaskStatus.KILLED.value,
+                completed=True,
+            )
             killed = WSMessage.command_output(
                 CommandOutputPayload(
                     task_id=cmd.task_id, stream="Task killed", done=True, status=TaskStatus.KILLED
@@ -250,11 +272,41 @@ class KAOWServer:
             await self._connections.broadcast(killed)
         except Exception as exc:
             logger.exception("Command execution failed: %s", cmd.task_id)
+            try:
+                await asyncio.to_thread(
+                    self._transcript.update_status,
+                    cmd.task_id,
+                    TaskStatus.FAILED.value,
+                    completed=True,
+                )
+            except Exception:
+                logger.exception("Failed to persist failure status: %s", cmd.task_id)
             error = WSMessage.error(
                 ErrorPayload(message=str(exc), code="EXECUTION_FAILED", task_id=cmd.task_id),
                 msg_id=msg_id,
             )
             await self._connections.broadcast(error)
+
+    async def _handle_history(
+        self, payload: dict[str, Any], msg_id: str, websocket: WebSocket
+    ) -> None:
+        """Return the local chat transcript to the requesting client."""
+        try:
+            request = HistoryPayload(**payload)
+        except Exception as exc:
+            error = WSMessage.error(
+                ErrorPayload(message=f"Invalid history payload: {exc}", code="INVALID_PAYLOAD"),
+                msg_id=msg_id,
+            )
+            await self._connections.broadcast(error)
+            return
+
+        entries = await asyncio.to_thread(self._transcript.history, request.limit)
+        result = WSMessage.history_result(
+            HistoryResultPayload(entries=[HistoryEntry(**entry.to_dict()) for entry in entries]),
+            msg_id=msg_id,
+        )
+        await websocket.send_text(result.to_json())
 
     async def _handle_screenshot(self, msg_id: str) -> None:
         """Capture and broadcast a screenshot."""
@@ -262,9 +314,7 @@ class KAOWServer:
             image_b64 = await self._display.capture_screenshot()
             from kaow.server.protocol import ScreenshotPayload
 
-            msg = WSMessage.screenshot(
-                ScreenshotPayload(image=image_b64), msg_id=msg_id
-            )
+            msg = WSMessage.screenshot(ScreenshotPayload(image=image_b64), msg_id=msg_id)
             await self._connections.broadcast(msg)
         except Exception as exc:
             logger.exception("Screenshot capture failed")

@@ -20,6 +20,7 @@ class MessageType(StrEnum):
     SCREENSHOT_REQUEST = "screenshot_request"
     KILL = "kill"
     PING = "ping"
+    HISTORY = "history"
 
     # Daemon → Client
     COMMAND_OUTPUT = "command_output"
@@ -28,6 +29,7 @@ class MessageType(StrEnum):
     PONG = "pong"
     TASK_QUEUED = "task_queued"
     STATUS = "status"
+    HISTORY_RESULT = "history_result"
 
 
 class TaskStatus(StrEnum):
@@ -46,7 +48,9 @@ class TaskStatus(StrEnum):
 class CommandPayload(BaseModel):
     """Payload for a command message sent from client to daemon."""
 
-    prompt: str = Field(..., min_length=1, max_length=100_000, description="The prompt to send to the AI CLI")
+    prompt: str = Field(
+        ..., min_length=1, max_length=100_000, description="The prompt to send to the AI CLI"
+    )
     task_id: str = Field(default_factory=lambda: str(uuid4()), description="Unique task identifier")
 
 
@@ -54,6 +58,28 @@ class KillPayload(BaseModel):
     """Payload for a kill message sent from client to daemon."""
 
     task_id: str = Field(..., description="ID of the task to terminate")
+
+
+class HistoryPayload(BaseModel):
+    """Payload requesting prior chat transcript from the daemon."""
+
+    limit: int = Field(default=50, ge=1, le=500, description="Max entries to return")
+
+
+class HistoryEntry(BaseModel):
+    """One transcript entry returned by the daemon."""
+
+    task_id: str
+    prompt: str
+    status: str
+    created_at: str
+    output: str
+
+
+class HistoryResultPayload(BaseModel):
+    """Prior chat transcript, most recent last."""
+
+    entries: list[HistoryEntry] = Field(default_factory=list)
 
 
 # --- Daemon → Client Messages ---
@@ -120,17 +146,23 @@ class WSMessage(BaseModel):
     @classmethod
     def command(cls, payload: CommandPayload, msg_id: str | None = None) -> WSMessage:
         """Create a command message."""
-        return cls(type=MessageType.COMMAND, id=msg_id or str(uuid4()), payload=payload.model_dump())
+        return cls(
+            type=MessageType.COMMAND, id=msg_id or str(uuid4()), payload=payload.model_dump()
+        )
 
     @classmethod
     def command_output(cls, payload: CommandOutputPayload, msg_id: str | None = None) -> WSMessage:
         """Create a command output message."""
-        return cls(type=MessageType.COMMAND_OUTPUT, id=msg_id or str(uuid4()), payload=payload.model_dump())
+        return cls(
+            type=MessageType.COMMAND_OUTPUT, id=msg_id or str(uuid4()), payload=payload.model_dump()
+        )
 
     @classmethod
     def screenshot(cls, payload: ScreenshotPayload, msg_id: str | None = None) -> WSMessage:
         """Create a screenshot message."""
-        return cls(type=MessageType.SCREENSHOT, id=msg_id or str(uuid4()), payload=payload.model_dump())
+        return cls(
+            type=MessageType.SCREENSHOT, id=msg_id or str(uuid4()), payload=payload.model_dump()
+        )
 
     @classmethod
     def error(cls, payload: ErrorPayload, msg_id: str | None = None) -> WSMessage:
@@ -145,9 +177,20 @@ class WSMessage(BaseModel):
     @classmethod
     def task_queued(cls, payload: TaskQueuedPayload, msg_id: str | None = None) -> WSMessage:
         """Create a task queued confirmation."""
-        return cls(type=MessageType.TASK_QUEUED, id=msg_id or str(uuid4()), payload=payload.model_dump())
+        return cls(
+            type=MessageType.TASK_QUEUED, id=msg_id or str(uuid4()), payload=payload.model_dump()
+        )
 
     @classmethod
     def pong(cls, msg_id: str | None = None) -> WSMessage:
         """Create a pong response."""
         return cls(type=MessageType.PONG, id=msg_id or str(uuid4()))
+
+    @classmethod
+    def history_result(cls, payload: HistoryResultPayload, msg_id: str | None = None) -> WSMessage:
+        """Create a history result message."""
+        return cls(
+            type=MessageType.HISTORY_RESULT,
+            id=msg_id or str(uuid4()),
+            payload=payload.model_dump(),
+        )

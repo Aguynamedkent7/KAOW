@@ -46,8 +46,12 @@ export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin"
 
 # platform-tools (adb), the platform + build-tools we'll pin in Gradle, emulator deps omitted
 yes | sdkmanager --licenses
-sdkmanager "platform-tools" "platforms;android-35" "build-tools;34.0.0"
+sdkmanager "platform-tools" "platforms;android-36" "build-tools;34.0.0"
 ```
+
+> Note: the mobile project compiles against `android-36` (compileSdk 36) with
+> AGP 8.13.2. AGP 8.13's max *recommended* compile SDK is 36, so do not bump
+> compileSdk to 37 until AGP 9.x is adopted.
 
 Verify:
 
@@ -57,7 +61,16 @@ adb --version | head -1
 
 ## 4. Persistent env vars
 
-Add to `~/.bashrc` (or `~/.zshrc`):
+**Fish** (`~/.config/fish/config.fish`):
+
+```fish
+set -gx ANDROID_HOME "$HOME/Android/Sdk"
+set -gx PATH "$ANDROID_HOME/cmdline-tools/latest/bin" "$ANDROID_HOME/platform-tools" $PATH
+```
+
+Reload: `source ~/.config/fish/config.fish`.
+
+**Bash/zsh** (`~/.bashrc` / `~/.zshrc`):
 
 ```bash
 export ANDROID_HOME=$HOME/Android/Sdk

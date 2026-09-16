@@ -11,14 +11,15 @@ class CLIAdapterType(StrEnum):
 
     CLAUDE = "claude"
     OPENDEVIN = "opendevin"
+    OPENCODE = "opencode"
 
 
-class RelayMode(StrEnum):
-    """How the daemon connects to clients."""
+class CaptureMode(StrEnum):
+    """Which X11 server screenshots should be taken from."""
 
-    LOCAL = "local"        # Direct WebSocket only (Phase 1)
-    CLOUD = "cloud"        # Supabase relay (Phase 2)
-    BOTH = "both"          # Local WS + Supabase relay
+    AUTO = "auto"
+    VIRTUAL = "virtual"
+    REAL = "real"
 
 
 class Settings(BaseSettings):
@@ -30,10 +31,10 @@ class Settings(BaseSettings):
     port: int = Field(default=8765, description="WebSocket server port")
     auth_token: str = Field(..., description="Bearer token for local WS auth")
     cli_adapter: CLIAdapterType = Field(
-        default=CLIAdapterType.CLAUDE,
+        default=CLIAdapterType.OPENCODE,
         description="Which AI CLI adapter to use",
     )
-    cli_path: str = Field(default="claude", description="Path to the AI CLI binary")
+    cli_path: str = Field(default="opencode", description="Path to the AI CLI binary")
     display_resolution: str = Field(
         default="1920x1080",
         description="Virtual display resolution (WxH)",
@@ -42,27 +43,15 @@ class Settings(BaseSettings):
         default=5,
         description="Seconds between automatic screenshots",
     )
+    capture_mode: CaptureMode = Field(
+        default=CaptureMode.AUTO,
+        description="Screenshot source: auto = real display first, virtual fallback",
+    )
     log_level: str = Field(default="INFO", description="Logging level")
 
-    # Relay mode
-    relay_mode: RelayMode = Field(
-        default=RelayMode.LOCAL,
-        description="Connection mode: local, cloud, or both",
-    )
-
-    # Supabase (required when relay_mode is cloud or both)
-    supabase_url: str = Field(default="", description="Supabase project URL")
-    supabase_service_key: str = Field(
-        default="",
-        description="Supabase service_role key (daemon uses this to bypass RLS)",
-    )
-    supabase_anon_key: str = Field(default="", description="Supabase anon/public key")
-
-    # Device identity (for Supabase registration)
-    device_name: str = Field(default="My PC", description="Device name shown in mobile app")
-    device_user_id: str = Field(
-        default="",
-        description="Supabase user_id this device is paired to (set after QR pairing)",
+    data_dir: str = Field(
+        default="~/.kaow",
+        description="Directory for local persistence (chat transcript)",
     )
 
     @property

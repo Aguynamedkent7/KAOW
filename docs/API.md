@@ -73,6 +73,22 @@ Health check / keepalive.
 }
 ```
 
+### `history`
+Request the prior chat transcript stored locally on the daemon.
+
+```json
+{
+  "type": "history",
+  "id": "msg-005",
+  "payload": {
+    "limit": 50
+  }
+}
+```
+
+`limit` is optional (default 50, max 500). The reply is sent only to the
+requesting socket as `history_result`; entries are ordered oldest first.
+
 ## Daemon → Client Messages
 
 ### `command_output`
@@ -163,6 +179,41 @@ System telemetry report.
 }
 ```
 
+### `history_result`
+Reply to `history`: prior transcript persisted on the daemon.
+
+```json
+{
+  "type": "history_result",
+  "id": "msg-007",
+  "payload": {
+    "entries": [
+      {
+        "task_id": "task-uuid",
+        "prompt": "List all files",
+        "status": "completed",
+        "created_at": "2026-09-16T09:00:00Z",
+        "output": "output text"
+      }
+    ]
+  }
+}
+```
+
+## Pairing
+
+Run `kaow pair` on the PC daemon host. It prints an ASCII QR code plus the
+manual-entry values:
+
+```
+URL: ws://<tailnet-address>:<port>/ws
+Token: <auth_token>
+```
+
+The QR encodes `ws://<tailnet-address>:<port>/ws?token=<auth_token>`. The mobile
+app scans this and connects straight over the tailnet (WireGuard-encrypted; no
+cloud relay).
+
 ## Error Codes
 
 | Code | Description |
@@ -173,6 +224,7 @@ System telemetry report.
 | `INVALID_PAYLOAD` | Payload validation failed |
 | `EXECUTION_FAILED` | AI CLI execution error |
 | `SCREENSHOT_FAILED` | Screenshot capture error |
+| `PERSISTENCE_FAILED` | Failed to store a transcript chunk locally |
 
 ## Task Statuses
 

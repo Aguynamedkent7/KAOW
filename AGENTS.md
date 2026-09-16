@@ -2,15 +2,16 @@
 
 ## Project Overview
 KAOW (Kents AI Officiated Workflow) is a multi-user system where a phone app
-remotely controls a PC daemon wrapping AI CLIs (Claude, OpenDevin) for
+remotely controls a PC daemon wrapping AI CLIs (Claude, OpenDevin, opencode) for
 headless automation.
 
-**Flow**: Phone → Supabase (auth + relay) → PC Daemon → AI CLI → Virtual Display → Screenshots
+**Flow**: Phone → PC Daemon (direct Tailscale WS) → AI CLI → Virtual Display → Screenshots
 
 ## Tech Stack
 - **Daemon**: Python 3.11+, FastAPI, WebSockets, Pydantic, uv
-- **Mobile**: Kotlin, Jetpack Compose, Supabase Kotlin SDK
-- **Database**: Supabase (PostgreSQL + realtime)
+- **Mobile**: Kotlin, Jetpack Compose, ktor WebSocket client over Tailscale
+- **Database**: SQLite (daemon-local transcript), no cloud backend
+- **Network**: Tailscale tailnet (WireGuard / DERP fallback), `kaow pair` QR pairing
 - **Infra**: Docker, docker-compose, systemd
 
 ## Code Conventions (REQUIRED)
@@ -44,7 +45,7 @@ headless automation.
 
 ## Development Phases
 - Phase 1: Local PoC (daemon-first) → docs/PHASE1.md
-- Phase 2: Cloud relay + mobile → docs/PHASE2.md
+- Phase 2: Mobile app over Tailscale (P2P) → docs/PHASE2.md
 - Phase 3: Power management → docs/PHASE3.md
 - Phase 4: Cross-platform packaging → docs/PHASE4.md
 - Phase 5: Deployment & zero-touch setup (one-command installers) → docs/PHASE5.md

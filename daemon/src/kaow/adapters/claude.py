@@ -50,7 +50,8 @@ class ClaudeAdapter(CLIAdapter):
             process = await asyncio.create_subprocess_exec(
                 self._cli_path,
                 "--print",
-                "--output-format", "text",
+                "--output-format",
+                "text",
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -111,7 +112,8 @@ class ClaudeAdapter(CLIAdapter):
 
         try:
             process = await asyncio.create_subprocess_exec(
-                self._cli_path, "--version",
+                self._cli_path,
+                "--version",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
