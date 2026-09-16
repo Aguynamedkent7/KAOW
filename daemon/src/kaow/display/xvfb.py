@@ -11,7 +11,7 @@ import signal
 
 from kaow.config import CaptureMode
 from kaow.display.base import DisplayError, DisplayManager
-from kaow.display.screenshot import capture_x11_screenshot
+from kaow.display.screenshot import capture_screenshot, capture_x11_screenshot
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +171,8 @@ class XvfbDisplay(DisplayManager):
         """Capture the current screen as base64 PNG.
 
         Honors the configured capture mode: virtual, real, or auto
-        (real display first, Xvfb as fallback).
+        (real display first, Xvfb as fallback). Uses grim for Wayland
+        and X11 methods for X11 sessions.
 
         Returns:
             Base64-encoded PNG image string.
@@ -190,11 +191,11 @@ class XvfbDisplay(DisplayManager):
                 raise DisplayError(
                     "CaptureMode.REAL requires a visible real display, none detected"
                 )
-            return await capture_x11_screenshot(self._real_display, self._width, self._height)
+            return await capture_screenshot(self._real_display, self._width, self._height)
 
         if self._real_display is not None:
             try:
-                return await capture_x11_screenshot(self._real_display, self._width, self._height)
+                return await capture_screenshot(self._real_display, self._width, self._height)
             except DisplayError as exc:
                 logger.warning("Real display capture failed, using virtual: %s", exc)
 

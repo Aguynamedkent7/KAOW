@@ -4,18 +4,25 @@
 - **Goal**: Build KAOW — phone-controlled PC daemon wrapping AI CLIs
 - **Current Phase**: Phase 2 — P2P Mobile App; transport + pairing shipped, capture mode added
 - **Now**: Daemon + mobile live on Tailscale tailnet (real-device pairing verified; `544fe00`).
-  Capture mode auto tries real X11 desktop first, Xvfb fallback — but real capture fails on
-  Wayland (user's session: `XDG_SESSION_TYPE=wayland`, `DISPLAY=:1` XWayland). `import` (ImageMagick)
-  can't capture Wayland surfaces. `grim` not installed. daemon/.env currently has
-  `KAOW_CAPTURE_MODE=auto` but user may want `virtual` to suppress noise until Wayland support added.
-  opencode is now the default CLI adapter. 53 tests green, lint clean.
+  OpenCodeAdapter is default CLI adapter (`96e3eeb`). Configurable capture mode
+  (`KAOW_CAPTURE_MODE=auto|virtual|real`) merged.
+  Wayland capture implementation is complete — `_wayland_available()` checks grim binary +
+  live socket (`$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY`) rather than `XDG_SESSION_TYPE` (unreliable
+  when daemon runs detached); `_is_sane_png()` via Pillow rejects garbage/tiny captures from
+  XWayland; `capture_screenshot()` dispatcher routes grim-first with automatic fallback to X11
+  methods and Xvfb virtual framebuffer.
+  Round-trip test validated: WS connect → ping/pong → opencode execution → output streaming
+  → history persistence → screenshot (1920x1080 Xvfb) all pass. 63 tests green, ruff + mypy clean.
+  **grim still not installed on host** — user must run `sudo pacman -S grim` for live Wayland desktop capture.
 - **Next**:
-  1. Fix Wayland capture: install `grim` (`sudo pacman -S grim`), add `_capture_with_grim()` to screenshot.py
-     (needs Wayland socket path `$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY`)
-  2. Round-trip test: pair → scan → chat → opencode run execution
-  3. DirectRelay keepalive/robustness (ping, recoverable DISCONNECTED state, backoff cap)
-  4. Phase 5 zero-touch bootstrap (plan only — write to docs/PHASE5.md)
-  5. E2E encryption; power management wiring
+  1. DirectRelay keepalive/robustness (`mobile/app/src/main/java/com/kaow/mobile/net/DirectRelay.kt`)
+     — `ping`/`pong` heartbeat (20s interval, 15s timeout), backoff capped at 32s, `DISCONNECTED` as
+     recoverable state (auto-reconnect with delay), channel-based ordered sends, fix `store.load()!!`
+     null assertion (capture config once per connect loop).
+  2. Live mobile round-trip test: chat command from phone → opencode execution on PC.
+  3. Install `grim` on host (`sudo pacman -S grim`) and verify live desktop capture on Wayland.
+  4. Phase 5 zero-touch bootstrap (plan-only in `docs/PHASE5.md` — ready for implementation).
+  5. E2E encryption; power management wiring.
 - **Constraints**: 300 LOC/file, modular-first, no silent failures, container-first
 
 ## Plans Log
@@ -55,6 +62,10 @@
 - D-210 ACTIVE: capture mode (`KAOW_CAPTURE_MODE=auto|virtual|real`) — auto reads
   from the user's real X11 display (`:0` etc.) when detected, falling back to the
   Xvfb virtual framebuffer; real mode enforces real display only. [CODE] 2026-09-16
+- D-211 ACTIVE: Wayland screenshot capture uses `grim` directly with live Wayland socket
+  validation (`$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY`) rather than `XDG_SESSION_TYPE`, coupled
+  with Pillow dimension sanity checks (`_is_sane_png`) to prevent corrupt or dummy XWayland
+  captures from succeeding. [CODE] 2026-09-16
 
 ## Progress Log
 - 2026-09-15 [CODE]: Git repo initialized, .gitignore, LICENSE, .env.example
@@ -137,15 +148,26 @@
   connection status. `:app:assembleDebug` GREEN, no warnings.
 - 2026-09-16 [CODE]: Docs — README/ARCHITECTURE/AGENTS/PHASE1/PHASE2/PHASE6/API updated to
   Tailscale-direct model; `supabase/` migrations + seed deleted (dead after D-207).
-- 2026-09-16 [CODE]: Capture mode (D-210) — `KAOW_CAPTURE_MODE=auto|virtual|real` added
-  to config; `XvfbDisplay` detects ambient DISPLAY before clobbering; in `auto` mode
-  screenshots come from the real X11 desktop when present, Xvfb virtual fallback.
-  opencode now the default CLI adapter. 53 tests, ruff + mypy clean.
-- 2026-09-16 [CODE]: opencode adapter — `adapters/opencode.py` (opencode run, kill all,
-  health_check via --version), registered in config/main factory. 53 tests pass.
+- 2026-09-16 [CODE]: opencode adapter + capture mode committed (`96e3eeb`) — OpenCodeAdapter
+  (`opencode run`, kill all, health_check via --version), `KAOW_CAPTURE_MODE=auto|virtual|real`,
+  `XvfbDisplay` ambient DISPLAY detection, config defaults, tests, docs updated.
 - 2026-09-16 [TEST]: Live Tailscale test on user's machine — phone (100.113.131.8) scanned QR,
   connected, persisted pairing across force-quit. Dashboard shows Xvfb :99 (blue root).
   No live chat command sent yet — opencode round-trip is next.
+- 2026-09-16 [CODE]: Wayland capture rewrite — `_wayland_available()` checks grim binary +
+  live Wayland socket (`$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY`) instead of `XDG_SESSION_TYPE`
+  (unreliable when daemon runs detached via setsid). `_is_sane_png()` via Pillow rejects
+  garbage/tiny PNGs (XWayland import returns valid-but-tiny solid-color images). `capture_screenshot()`
+  now routes: grim-first when available, fallback to X11 methods. `_capture_with_import` and
+  `_capture_with_scrot` validate via `_is_sane_png()` before returning. Removed redundant
+  `__import__("os")` hack in `_capture_with_import`.
+- 2026-09-16 [CODE]: `test_screenshot.py` added — 10 tests across `TestWaylandDetection`,
+  `TestSanePng`, `TestGrimCapture`, `TestCaptureDispatch`. Daemon test suite expanded to 63 tests,
+  all passing, ruff + mypy clean.
+- 2026-09-16 [TEST]: Local loopback round-trip validated end-to-end — started daemon via setsid
+  (nohup, detached from tool's shell process group), simulated phone with asyncio websockets
+  client (`roundtrip_client.py`): ping→pong, command→opencode→output chunk→completed,
+  history→persisted entry, screenshot→1920x1080. Full chain verified.
 
 ## Discoveries Log
 - 2026-09-15 [TOOL]: `loop.run_in_executor(loop, func, kwarg=...)` does NOT forward kwargs —
@@ -165,18 +187,38 @@
   (XWayland); `pgrep -a Xvfb` confirms. `xsetroot -solid <color>` on :99 proves Dashboard renders.
 - 2026-09-16 [TOOL]: Mobile app can't stay paired after scanning — pairing persists on disk but
   UI reverted to Pair screen mid-session; direct WS reconnect churn observed. Needs keepalive fix.
+- 2026-09-16 [TOOL]: `XDG_SESSION_TYPE` is unreliable for Wayland detection when daemon runs
+  detached (setsid/nohup from a non-desktop shell). Concrete checks (grim binary + socket file)
+  are more robust. `_wayland_available()` checks all three: binary, env vars, socket exists.
+- 2026-09-16 [TOOL]: `import -window root png:-` on an XWayland display (`:1`) returns a valid
+  PNG but of a tiny solid-color image (e.g., 1920x1080 of uniform blue = 390 bytes). Without
+  Pillow-based dimension validation, this looks like a successful capture. `_is_sane_png()`
+  fixes this: decodes the PNG and checks actual pixel dimensions.
+- 2026-09-16 [TOOL]: Daemon launched via `setsid nohup uv run kaow &` from a bash tool call
+  that the tool's process-group cleanup would kill. `setsid` is mandatory to detach the daemon
+  into its own session. `pkill -f kaow` also matches the calling shell's own args — must use
+  specific PIDs instead.
+- 2026-09-16 [TOOL]: Solid-color Xvfb root (blue screen, no windows) compresses to ~390 bytes
+  as PNG. A byte-length-based screenshot sanity check (`len > 1000`) rejects it as invalid.
+  Use Pillow dimension-based check instead.
 
 ## Outcomes Log
 - 2026-09-15 [CODE]: Phase 1 daemon complete — shipped as `5ca360c` + `56e4164`
   (initial scaffold + CI/README). CI passes (ruff, mypy, pytest). Published on GitHub.
 - 2026-09-15 [CODE]: Phase 2 daemon relay complete — schema written, relay module built and tested,
   ready to apply migrations to a live Supabase project. Mobile deferred pending toolchain.
+- 2026-09-16 [CODE]: OpenCode default adapter & capture mode fallback shipped in `96e3eeb`
+  on branch `feat/mobile-skeleton`.
 
-## Uncommitted Work (as of session end 2026-09-16)
-- **Not yet committed**: opencode adapter (`adapters/opencode.py`, config default change),
-  capture mode (D-210), `.env.example` capture-mode entry, test additions, PHASE5.md full
-  plan-only rewrite, PHASE2.md status/risks update. Work is on branch
-  `feat/mobile-skeleton`. Last commit `544fe00` was the Tailscale route. Need to commit these.
-- **Pending user action**: `sudo pacman -S grim` for Wayland capture support.
-- **daemon/.env**: created from `.env.example` copy, has real auth token (d661e2...); adapter set
-  to `opencode`, capture mode still `auto` (may want `virtual` to silence warnings until grim).
+## Uncommitted Work (as of 2026-09-16)
+- **Pending commit on `feat/mobile-skeleton`**:
+  - `daemon/src/kaow/display/screenshot.py`: Wayland auto-detection via grim + socket path,
+    `_is_sane_png()` dimension check, `capture_screenshot()` dispatcher.
+  - `daemon/src/kaow/display/xvfb.py`: updated screenshot caller to use `capture_screenshot()`.
+  - `daemon/tests/test_screenshot.py`: 10 unit tests for screenshot module.
+  - `.agent/CONTINUITY.md`: status, tests, and findings updated.
+- **Pending user action**: `sudo pacman -S grim` for live Wayland desktop capture.
+- **daemon/.env**: local file configured with real auth token, adapter=`opencode`, capture=`auto`.
+- **DirectRelay rewrite planned**: `mobile/app/src/main/java/com/kaow/mobile/net/DirectRelay.kt`
+  needs ping/pong keepalive, backoff cap, recoverable DISCONNECTED, ordered sends via Channel,
+  and `store.load()` null safety fix.
