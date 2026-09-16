@@ -52,9 +52,7 @@ async def capture_x11_screenshot(
             last_error = exc
             logger.debug("Screenshot method %s failed: %s", method.__name__, exc)
 
-    raise DisplayError(
-        f"All screenshot methods failed. Last error: {last_error}"
-    )
+    raise DisplayError(f"All screenshot methods failed. Last error: {last_error}")
 
 
 async def _capture_with_import(display: str, width: int, height: int) -> str | None:

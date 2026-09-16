@@ -14,7 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -37,6 +37,7 @@ import androidx.compose.runtime.collectAsState
 import com.kaow.mobile.KaowApp
 import com.kaow.mobile.data.model.Author
 import com.kaow.mobile.data.model.ChatMessage
+import com.kaow.mobile.net.ConnectionStatus
 
 @Composable
 fun ChatScreen(app: KaowApp, viewModel: ChatViewModel = viewModel()) {
@@ -44,7 +45,7 @@ fun ChatScreen(app: KaowApp, viewModel: ChatViewModel = viewModel()) {
     var input by rememberSaveable { mutableStateOf("") }
 
     Column(Modifier.fillMaxSize()) {
-        DeviceBanner(deviceName = ui.device?.name, status = ui.device?.status)
+        ConnectionBanner(ui.connection)
         ui.error?.let {
             ErrorBanner(it)
         }
@@ -85,17 +86,29 @@ fun ChatScreen(app: KaowApp, viewModel: ChatViewModel = viewModel()) {
                 },
                 enabled = input.isNotBlank(),
             ) {
-                Icon(Icons.Filled.Send, contentDescription = "Send")
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
             }
         }
     }
 }
 
 @Composable
-private fun DeviceBanner(deviceName: String?, status: String?) {
-    Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
+private fun ConnectionBanner(status: ConnectionStatus) {
+    val label = when (status) {
+        ConnectionStatus.CONNECTED -> "Connected to your PC"
+        ConnectionStatus.CONNECTING -> "Connecting to your PC…"
+        ConnectionStatus.DISCONNECTED -> "Not connected - tap Re-pair to set up"
+        ConnectionStatus.FAILED -> "Can't reach your PC - check Tailscale on both devices"
+    }
+    val color = when (status) {
+        ConnectionStatus.CONNECTED -> MaterialTheme.colorScheme.surfaceVariant
+        ConnectionStatus.CONNECTING -> MaterialTheme.colorScheme.surfaceVariant
+        ConnectionStatus.DISCONNECTED -> MaterialTheme.colorScheme.errorContainer
+        ConnectionStatus.FAILED -> MaterialTheme.colorScheme.errorContainer
+    }
+    Surface(color = color) {
         Text(
-            text = deviceName ?: "No device",
+            text = label,
             style = MaterialTheme.typography.labelLarge,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
             textAlign = TextAlign.Center,

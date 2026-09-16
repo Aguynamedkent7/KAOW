@@ -17,17 +17,6 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
-
-        buildConfigField(
-            "String",
-            "SUPABASE_URL",
-            "\"${providers.gradleProperty("KAOW_MOBILE_SUPABASE_URL").orNull.orEmpty()}\"",
-        )
-        buildConfigField(
-            "String",
-            "SUPABASE_ANON_KEY",
-            "\"${providers.gradleProperty("KAOW_MOBILE_SUPABASE_ANON_KEY").orNull.orEmpty()}\"",
-        )
     }
 
     buildTypes {
@@ -44,7 +33,6 @@ android {
 
     buildFeatures {
         compose = true
-        buildConfig = true
     }
 }
 
@@ -67,11 +55,9 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.core)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
-    implementation(platform(libs.supabase.bom))
-    implementation(libs.supabase.auth)
-    implementation(libs.supabase.postgrest)
-    implementation(libs.supabase.realtime)
     implementation(libs.ktor.client.okhttp)
+    implementation(libs.ktor.client.websockets)
+    implementation(libs.zxing.android.embedded)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

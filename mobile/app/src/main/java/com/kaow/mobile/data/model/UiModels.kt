@@ -20,7 +20,7 @@ enum class Author { USER, ASSISTANT }
 /** A single row in the chat transcript. */
 data class ChatMessage(
     val order: Long,
-    val commandId: String?,
+    val taskId: String?,
     val author: Author,
     val text: String,
     val status: TaskStatus?,

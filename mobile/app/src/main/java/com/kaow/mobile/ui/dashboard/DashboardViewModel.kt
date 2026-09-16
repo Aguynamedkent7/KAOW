@@ -5,7 +5,8 @@ import android.util.Base64
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.kaow.mobile.KaowApp
-import com.kaow.mobile.data.model.DeviceRow
+import com.kaow.mobile.net.ConnectionStatus
+import com.kaow.mobile.net.DaemonEvent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,8 +17,9 @@ import kotlinx.coroutines.withContext
 
 /** View state for the dashboard screen. */
 data class DashboardUiState(
-    val device: DeviceRow? = null,
+    val connection: ConnectionStatus = ConnectionStatus.DISCONNECTED,
     val screenshotBytes: ByteArray? = null,
+    val loading: Boolean = false,
     val error: String? = null,
 ) {
     override fun equals(other: Any?) = this === other
@@ -25,60 +27,35 @@ data class DashboardUiState(
 }
 
 class DashboardViewModel(app: Application) : AndroidViewModel(app) {
-    private val graph = (app as KaowApp).repositories
+    private val relay = (app as KaowApp).relay
     private val _ui = MutableStateFlow(DashboardUiState())
     val ui: StateFlow<DashboardUiState> = _ui.asStateFlow()
 
     init {
-        connect()
+        viewModelScope.launch {
+            relay.status.collect { status -> _ui.update { it.copy(connection = status) } }
+        }
+        viewModelScope.launch {
+            relay.events.collect { event ->
+                when (event) {
+                    is DaemonEvent.Screenshot -> {
+                        val bytes = withContext(Dispatchers.IO) { decodeBytes(event.imageBase64) }
+                        if (bytes != null) _ui.update { it.copy(screenshotBytes = bytes) }
+                    }
+                    is DaemonEvent.Error -> _ui.update { it.copy(error = event.message) }
+                    else -> Unit
+                }
+            }
+        }
+        refresh()
     }
 
     fun refresh() {
-        val device = _ui.value.device ?: return
+        if (_ui.value.connection != ConnectionStatus.CONNECTED) return
         viewModelScope.launch {
-            _ui.update { it.copy(error = null) }
-            loadScreenshot(device.id)
-        }
-    }
-
-    private fun connect() {
-        viewModelScope.launch {
-            _ui.update { it.copy(error = null) }
-            val device = try {
-                graph.devices.firstOnlineDevice()
-            } catch (e: Exception) {
-                _ui.update { it.copy(error = "Failed to load device: ${e.message}") }
-                return@launch
-            }
-            if (device == null) {
-                _ui.update { it.copy(error = "No online device found - start the daemon relay") }
-                return@launch
-            }
-            _ui.update { it.copy(device = device) }
-            loadScreenshot(device.id)
-            observeLive(device.id)
-        }
-    }
-
-    private suspend fun loadScreenshot(deviceId: String) {
-        val shot = try {
-            graph.dashboard.latestScreenshot(deviceId)
-        } catch (e: Exception) {
-            _ui.update { it.copy(error = "Failed to load screenshot: ${e.message}") }
-            null
-        }
-        if (shot != null) {
-            val bytes = withContext(Dispatchers.IO) { decodeBytes(shot.imageBase64) }
-            _ui.update { it.copy(screenshotBytes = bytes) }
-        }
-    }
-
-    private fun observeLive(deviceId: String) {
-        viewModelScope.launch {
-            graph.dashboard.observeScreenshots(deviceId).collect { shot ->
-                val bytes = withContext(Dispatchers.IO) { decodeBytes(shot.imageBase64) }
-                _ui.update { it.copy(screenshotBytes = bytes) }
-            }
+            _ui.update { it.copy(loading = true, error = null) }
+            relay.sendScreenshotRequest()
+            _ui.update { it.copy(loading = false) }
         }
     }
 

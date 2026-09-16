@@ -12,16 +12,15 @@ from kaow.adapters.opendevin import OpenDevinAdapter
 from kaow.config import CLIAdapterType, Settings, load_settings
 from kaow.display.xvfb import XvfbDisplay
 from kaow.queue.memory import TaskQueue
-from kaow.relay import create_relay, local_ws_enabled, relay_enabled
 from kaow.server.app import KAOWServer
 from kaow.telemetry.collector import TelemetryCollector
+from kaow.transcript.sqlite import SqliteTranscriptStore
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from kaow.adapters.base import CLIAdapter
     from kaow.display.base import DisplayManager
-    from kaow.relay.coordinator import RelayCoordinator
 
 
 def create_adapter(settings: Settings) -> CLIAdapter:
@@ -54,17 +53,14 @@ def setup_logging(level: str) -> None:
 
 
 async def run_daemon(settings: Settings) -> None:
-    """Run the KAOW daemon — start display, adapter, server, telemetry, relay."""
+    """Run the KAOW daemon - display, adapter, server, telemetry, transcript."""
     logger = logging.getLogger("kaow.main")
 
     adapter = create_adapter(settings)
     display = create_display(settings)
     telemetry = TelemetryCollector()
     task_queue = TaskQueue()
-
-    relay: RelayCoordinator | None = None
-    if relay_enabled(settings.relay_mode):
-        relay = create_relay(settings, adapter, display)
+    transcript = SqliteTranscriptStore(settings.data_dir)
 
     server = KAOWServer(
         auth_token=settings.auth_token,
@@ -72,7 +68,7 @@ async def run_daemon(settings: Settings) -> None:
         display=display,
         telemetry=telemetry,
         task_queue=task_queue,
-        relay=relay,
+        transcript=transcript,
     )
 
     shutdown_event = asyncio.Event()
@@ -85,15 +81,10 @@ async def run_daemon(settings: Settings) -> None:
         logger.info("Starting KAOW daemon...")
         logger.info("Adapter: %s (%s)", settings.cli_adapter, settings.cli_path)
         logger.info("Display: %s", settings.display_resolution)
-        if relay is not None:
-            logger.info("Relay: cloud (Supabase)")
-        if local_ws_enabled(settings.relay_mode):
-            logger.info("Listening: ws://%s:%d/ws", settings.host, settings.port)
+        logger.info("Listening: ws://%s:%d/ws", settings.host, settings.port)
 
         await display.start()
         await telemetry.start()
-        if relay is not None:
-            await relay.start()
 
         import uvicorn
 
@@ -117,8 +108,6 @@ async def run_daemon(settings: Settings) -> None:
         logger.exception("Fatal error in daemon")
         raise
     finally:
-        if relay is not None:
-            await relay.stop()
         await telemetry.stop()
         await display.stop()
         logger.info("KAOW daemon stopped")

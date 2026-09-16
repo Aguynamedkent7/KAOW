@@ -13,14 +13,6 @@ class CLIAdapterType(StrEnum):
     OPENDEVIN = "opendevin"
 
 
-class RelayMode(StrEnum):
-    """How the daemon connects to clients."""
-
-    LOCAL = "local"        # Direct WebSocket only (Phase 1)
-    CLOUD = "cloud"        # Supabase relay (Phase 2)
-    BOTH = "both"          # Local WS + Supabase relay
-
-
 class Settings(BaseSettings):
     """Daemon settings, populated from environment variables or .env file."""
 
@@ -44,25 +36,9 @@ class Settings(BaseSettings):
     )
     log_level: str = Field(default="INFO", description="Logging level")
 
-    # Relay mode
-    relay_mode: RelayMode = Field(
-        default=RelayMode.LOCAL,
-        description="Connection mode: local, cloud, or both",
-    )
-
-    # Supabase (required when relay_mode is cloud or both)
-    supabase_url: str = Field(default="", description="Supabase project URL")
-    supabase_service_key: str = Field(
-        default="",
-        description="Supabase service_role key (daemon uses this to bypass RLS)",
-    )
-    supabase_anon_key: str = Field(default="", description="Supabase anon/public key")
-
-    # Device identity (for Supabase registration)
-    device_name: str = Field(default="My PC", description="Device name shown in mobile app")
-    device_user_id: str = Field(
-        default="",
-        description="Supabase user_id this device is paired to (set after QR pairing)",
+    data_dir: str = Field(
+        default="~/.kaow",
+        description="Directory for local persistence (chat transcript)",
     )
 
     @property

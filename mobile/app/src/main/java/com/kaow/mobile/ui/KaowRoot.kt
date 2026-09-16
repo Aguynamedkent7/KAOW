@@ -1,16 +1,23 @@
 package com.kaow.mobile.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -20,29 +27,27 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kaow.mobile.KaowApp
-import com.kaow.mobile.data.remote.KaowSupabase
+import com.kaow.mobile.net.ConnectionStatus
 import com.kaow.mobile.ui.chat.ChatScreen
 import com.kaow.mobile.ui.dashboard.DashboardScreen
-import com.kaow.mobile.ui.login.LoginScreen
+import com.kaow.mobile.ui.pair.PairScreen
 import com.kaow.mobile.ui.power.PowerScreen
 import com.kaow.mobile.ui.theme.KaowTheme
-import io.github.jan.supabase.auth.status.SessionStatus
 
-/** Root composable: auth gate, then the three-tab shell. */
+/** Root composable: pairing gate, then the three-tab shell. */
 @Composable
 fun KaowRoot() {
     KaowTheme {
         val app = LocalContext.current.applicationContext as KaowApp
-        val auth = app.repositories.auth
-        val status by auth.sessionStatus.collectAsStateWithLifecycle(initialValue = SessionStatus.Initializing)
-
-        when {
-            !KaowSupabase.isConfigured -> ConfigErrorScreen()
-            status is SessionStatus.Authenticated -> HomeShell(app)
-            status == SessionStatus.Initializing -> LoadingScreen()
-            else -> LoginScreen(auth)
+        val hasPairing = app.connectionStore.load() != null
+        if (hasPairing) {
+            HomeShell(app)
+        } else {
+            PairScreen(app)
         }
     }
 }
@@ -50,7 +55,7 @@ fun KaowRoot() {
 private data class Tab(val label: String, val icon: ImageVector)
 
 private val tabs = listOf(
-    Tab("Chat", Icons.Filled.Send),
+    Tab("Chat", Icons.AutoMirrored.Filled.Send),
     Tab("Dashboard", Icons.Filled.Home),
     Tab("Power", Icons.Filled.PlayArrow),
 )
@@ -72,11 +77,49 @@ private fun HomeShell(app: KaowApp) {
             }
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            when (selected) {
-                0 -> ChatScreen(app)
-                1 -> DashboardScreen(app)
-                else -> PowerScreen()
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            ConnectionBar(app)
+            Box(Modifier.weight(1f)) {
+                when (selected) {
+                    0 -> ChatScreen(app)
+                    1 -> DashboardScreen(app)
+                    else -> PowerScreen()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConnectionBar(app: KaowApp) {
+    val status by app.relay.status.collectAsStateWithLifecycle()
+    if (status != ConnectionStatus.FAILED) return
+    Surface(color = MaterialTheme.colorScheme.errorContainer) {
+        Column(Modifier.fillMaxWidth().padding(10.dp)) {
+            Text(
+                text = if (app.connectionStore.load() != null) {
+                    "Can't reach your PC. Is it on? Is Tailscale running?"
+                } else {
+                    "Not paired yet."
+                },
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(Modifier.padding(top = 6.dp)) {
+                Button(
+                    onClick = { app.relay.connect() },
+                    modifier = Modifier.weight(1f).padding(end = 6.dp),
+                ) {
+                    Text("Retry")
+                }
+                OutlinedButton(
+                    onClick = { app.relay.forget() },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Re-pair")
+                }
             }
         }
     }

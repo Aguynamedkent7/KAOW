@@ -45,7 +45,8 @@ Build a working Python daemon that accepts WebSocket commands, runs them through
 - D001: Python daemon with FastAPI + WebSockets
 - D002: Pluggable adapter pattern for AI CLIs
 - D003: 1 phone ↔ 1 daemon model
-- D004: Full conversation persistence in Supabase (Phase 2)
+- D004: Full conversation persistence in SQLite on the daemon host (Phase 2)
+  *superseded the original Supabase-plan*
 - D005: MIT license
 
 ## Files Created
@@ -83,4 +84,4 @@ daemon/src/kaow/
 ```
 
 ## Next Phase
-Phase 2: Cloud relay + mobile app (Supabase backend, Kotlin/Jetpack Compose mobile)
+Phase 2: Mobile app over Tailscale (P2P, Kotlin/Jetpack Compose mobile)

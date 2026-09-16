@@ -1,19 +1,24 @@
 package com.kaow.mobile
 
 import android.app.Application
-import com.kaow.mobile.data.repository.AuthRepository
-import com.kaow.mobile.data.repository.ChatRepository
-import com.kaow.mobile.data.repository.DashboardRepository
-import com.kaow.mobile.data.repository.DeviceRepository
+import com.kaow.mobile.net.ConnectionStore
+import com.kaow.mobile.net.DirectRelay
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
-/** Simplest DI: repositories are lazy singletons hung off the Application. */
+/** Simplest DI: shared connection state hung off the Application. */
 class KaowApp : Application() {
-    val repositories = Repositories()
-}
+    val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    lateinit var connectionStore: ConnectionStore
+    lateinit var relay: DirectRelay
 
-class Repositories(
-    val auth: AuthRepository = AuthRepository(),
-    val devices: DeviceRepository = DeviceRepository(),
-    val chat: ChatRepository = ChatRepository(),
-    val dashboard: DashboardRepository = DashboardRepository(),
-)
+    override fun onCreate() {
+        super.onCreate()
+        connectionStore = ConnectionStore(this)
+        relay = DirectRelay(connectionStore, appScope)
+        if (connectionStore.load() != null) {
+            relay.connect()
+        }
+    }
+}

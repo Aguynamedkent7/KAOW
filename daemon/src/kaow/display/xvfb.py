@@ -60,10 +60,14 @@ class XvfbDisplay(DisplayManager):
         cmd = [
             "Xvfb",
             display_addr,
-            "-screen", "0", f"{self._width}x{self._height}x24",
+            "-screen",
+            "0",
+            f"{self._width}x{self._height}x24",
             "-ac",
-            "+extension", "GLX",
-            "+render", "-noreset",
+            "+extension",
+            "GLX",
+            "+render",
+            "-noreset",
         ]
 
         logger.info("Starting Xvfb: %s", " ".join(cmd))

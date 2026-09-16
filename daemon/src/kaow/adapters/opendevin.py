@@ -49,7 +49,8 @@ class OpenDevinAdapter(CLIAdapter):
             process = await asyncio.create_subprocess_exec(
                 self._cli_path,
                 "run",
-                "--task", prompt,
+                "--task",
+                prompt,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -110,7 +111,8 @@ class OpenDevinAdapter(CLIAdapter):
 
         try:
             process = await asyncio.create_subprocess_exec(
-                self._cli_path, "--version",
+                self._cli_path,
+                "--version",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )

@@ -30,6 +30,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.kaow.mobile.KaowApp
+import com.kaow.mobile.net.ConnectionStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -61,10 +62,25 @@ fun DashboardScreen(app: KaowApp, viewModel: DashboardViewModel = viewModel()) {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("Device", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(8.dp))
-                Text(ui.device?.name ?: "Not connected", style = MaterialTheme.typography.bodyLarge)
-                Text("Status: ${ui.device?.status ?: "—"}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 8.dp))
-                IconButton(onClick = { viewModel.refresh() }, modifier = Modifier.align(Alignment.End)) {
-                    Icon(Icons.Filled.Refresh, contentDescription = "Refresh screenshot")
+                Text(
+                    when (ui.connection) {
+                        ConnectionStatus.CONNECTED -> "Connected"
+                        ConnectionStatus.CONNECTING -> "Connecting…"
+                        ConnectionStatus.FAILED -> "Unreachable - check Tailscale"
+                        ConnectionStatus.DISCONNECTED -> "Not paired"
+                    },
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                IconButton(
+                    onClick = { viewModel.refresh() },
+                    enabled = ui.connection == ConnectionStatus.CONNECTED && !ui.loading,
+                    modifier = Modifier.align(Alignment.End),
+                ) {
+                    if (ui.loading) {
+                        CircularProgressIndicator(modifier = Modifier.padding(8.dp))
+                    } else {
+                        Icon(Icons.Filled.Refresh, contentDescription = "Refresh screenshot")
+                    }
                 }
             }
         }

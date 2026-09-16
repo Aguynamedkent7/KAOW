@@ -1,62 +1,70 @@
-# Phase 2 — Cloud Relay + Mobile App
+# Phase 2 — P2P Mobile App (Tailscale Direct)
 
 ## Goal
-Set up Supabase for auth and real-time command routing, build the Kotlin/Jetpack
-Compose mobile app, and test bidirectional communication over the internet.
+Build the Kotlin/Jetpack Compose mobile app and connect it **directly** to the PC
+daemon over a Tailscale tailnet (WireGuard / DERP fallback). No cloud relay, no
+operator-hosted project: user data stays entirely on the user's phone + PC.
 
-## Status: IN PROGRESS (daemon relay shipped, mobile skeleton compiles)
+## Status: IN PROGRESS (daemon relay removed, direct WS transport + QR pairing done, E2E pending)
 
 ## Completed Tasks
-- [x] Design database schema (devices, commands, command_outputs, screenshots)
-- [x] Write SQL migrations: `supabase/migrations/001_initial_schema.sql`
-- [x] RLS policies: `supabase/migrations/002_rls_policies.sql`
-- [x] Realtime publications: `supabase/migrations/003_realtime_publications.sql`
-- [x] Device registration function: `supabase/migrations/004_register_device_function.sql`
-- [x] Seed template: `supabase/seed.sql`
-- [x] Add `supabase` Python client to daemon deps
-- [x] Daemon settings: `relay_mode`, `KAOW_SUPABASE_*`, `KAOW_DEVICE_*` (config.py)
-- [x] Relay module (`daemon/src/kaow/relay/`): SupabaseClient, RealtimeSubscription,
-      RelayCoordinator, factory
-- [x] Wire relay into `KAOWServer` + `main.py` (modes: local / cloud / both)
-- [x] Bridge hook: cloud commands stream to local WebSocket clients (BOTH mode)
-- [x] Tests: `tests/test_relay.py` (48 total passing, ruff + mypy clean)
+- [x] Design database schema (devices, commands, command_outputs, screenshots) — superseeded, DB unused
+- [x] Write SQL migrations: `supabase/migrations/*.sql` — superseeded, DB unused
+- [x] Supabase relay removed from daemon (`config.py`, `relay/`, `main.py`, `server/app.py`,
+      deps, `.env.example`) [D-207]
+- [x] Local transcript persistence: `kaow/transcript/sqlite.py` (SQLite in `~/.kaow`),
+      append-only; persisted on every chunk + terminal status [D-208]
+- [x] `history` / `history_result` WS messages (limit 1..500; reply to requesting socket only)
+- [x] `kaow pair` CLI: detects Tailscale IP, prints `ws://<addr>:<port>/ws?token=...` QR code [D-209]
 - [x] Install Android toolchain (see `mobile/SETUP_TOOLCHAIN.md`) — JDK 17, adb,
       platform-36, build-tools 34 on Arch; env vars in fish config
 - [x] Build mobile app skeleton (Kotlin + Jetpack Compose) — auth, chat, dashboard,
-      power tabs; `./gradlew :app:assembleDebug` GREEN (`app-debug.apk`, 16 MB)
+      power tabs; `./gradlew :app:assembleDebug` GREEN (`app-debug.apk`)
+- [x] Mobile data layer rewritten: Supabase removed; direct Tailscale WS transport
+      (`net/DirectRelay` + `DaemonProtocol`, ktor websockets) [D-207]
+- [x] QR pairing screen (scan or manual entry) + settings persistence
+      (`net/ConnectionStore`); connection status banner + Re-pair/Retry on failure
+- [x] Daemon test suite green (43 tests), ruff + mypy clean; mobile `assembleDebug` green
 
 ## Planned Tasks
-- [ ] Implement chat interface (text/voice input) in Supabase-connected run
-- [ ] Implement live dashboard (screenshots, terminal logs) in Supabase-connected run
-- [ ] Connect mobile app to daemon via Supabase relay (real project creds)
-- [ ] Test bidirectional communication outside local network
-- [ ] Implement conversation history persistence
+- [ ] Test bidirectional communication over the internet (tailnet roam / DERP)
 - [ ] E2E encryption for screenshots and logs
+- [ ] Power management screen wired to real daemon endpoints
+- [ ] Real-device round trip: `kaow pair` → scan → chat → screenshot
 
 ## Dependencies
 - Phase 1 complete (daemon with WebSocket server)
-- Supabase project created (apply migrations 001–004)
+- Tailscale tailnet with phone + PC enrolled (free tier: 3 devices)
 - Android development environment (see `mobile/SETUP_TOOLCHAIN.md`)
+- Daemon bound to tailnet interface (plain `ws` — encrypted by WireGuard itself)
 
 ## Known Risks
-- Supabase realtime subscription latency
 - Mobile app WebSocket handling on background/foreground transitions
-- Screenshot base64 encoding size over cellular networks
-- `supabase` py client pulls a large dep tree (pyjwt, realtime, storage3, yarl)
+- Screenshot payload size over DERP relay (Tailscale fallback) on cellular
+- TLS for the daemon WS (`wss`) not needed over WireGuard; cert provisioning for
+  tailnet addresses left for a later phase if the user wants it
+- First-run: user must install + sign into Tailscale (extra install step)
 
 ## Decisions
-- D-201 ACTIVE: Three connection modes via `KAOW_RELAY_MODE` — `local` (WS only,
-  Phase 1 behavior), `cloud` (Supabase only), `both` (WS + relay bridged)
-  [CODE] 2026-09-15
-- D-202 ACTIVE: Daemon uses `service_role` key to bypass RLS; mobile uses anon key
-  scoped by RLS. Service key never ships in mobile app. [CODE] 2026-09-15
-- D-203 ACTIVE: `commands`/`command_outputs`/`screenshots` tables take base64 for
-  now; revisit Supabase Storage for large blobs in Phase 3+ [CODE] 2026-09-15
-- D-204 ACTIVE: `register_device` is a SECURITY DEFINER RPC (upsert by user_id+name)
-  [CODE] 2026-09-15
-- D-205 ACTIVE: Relay integration reuses the same CLI adapter + display; local WS
-  path unchanged. Device pairing (device_user_id) lands with QR pairing (Phase 6).
-  [CODE] 2026-09-15
+- D-201 SUPERSEDED: connection modes now `local` (WS only) is the product; the
+  `cloud`/`both` Supabase relay modes stay dormant behind `KAOW_RELAY_MODE` [CODE] 2026-09-15
+- D-202 SUPERSEDED: no cloud relay — user data never leaves phone/PC tailnet.
+  Supabase not used for user data. [CODE] 2026-09-15
+- D-203 SUPERSEDED: screenshots/transcripts are streamed or stored on the PC, not
+  in a cloud DB. [CODE] 2026-09-15
+- D-204 SUPERSEDED: no server-side device registry — device identity is the
+  daemon token + tailnet address. [CODE] 2026-09-15
+- D-205 SUPERSEDED: pairing lands via Tailscale + daemon token (QR pairing pulled
+  forward as the intended UX, see Phase 6). [CODE] 2026-09-15
 - D-206 ACTIVE: Mobile pins Compose BOM 2026.06.01 (ui 1.11.x) + core-ktx 1.18.0 +
   lifecycle 2.10.0 to stay within AGP 8.13.2 / compileSdk 36 (newer androidx
   artifacts require AGP 9.1 + compileSdk 37). [CODE] 2026-09-16
+- D-207 ACTIVE: full Tailscale (P2P) transport — dedicated WS connection from the
+  phone straight to the PC daemon; Supabase relay code removed from daemon config
+  and the mobile app entirely. [DESIGN] 2026-09-16
+- D-208 ACTIVE: conversation history is a daemon-local SQLite transcript
+  (`~/.kaow/transcript.db`); the mobile app fetches it via `history_result` on
+  connect, no cloud DB. [DESIGN] 2026-09-16
+- D-209 ACTIVE: pairing is a QR code printed by `kaow pair` on the PC containing
+  `ws://<tailnet-address>:<port>/ws?token=<auth_token>`; mobile scans it and
+  stores the pairing locally (reconnectable until user re-pairs). [DESIGN] 2026-09-16

@@ -2,11 +2,12 @@
 
 ## Snapshot
 - **Goal**: Build KAOW — phone-controlled PC daemon wrapping AI CLIs
-- **Current Phase**: Phase 2 — Cloud Relay + Mobile App
-- **Now**: Mobile app skeleton compiles (`:app:assembleDebug` GREEN); next is a
-  Supabase-connected run (needs project URL + anon key via `-P` gradle props)
-- **Next**: Install app on device/emulator, connect to staged Supabase project,
-  verify chat → daemon → screenshots round-trip
+- **Current Phase**: Phase 2 — P2P Mobile App; transport is Tailscale direct (D-207)
+- **Now**: Daemon relay fully removed; local SQLite transcript + `history`/`history_result`
+  + `kaow pair` QR CLI shipped (43 tests green). Mobile data layer rewritten to a direct
+  WebSocket transport (`net/DirectRelay`) with QR pairing screen; `assembleDebug` green.
+- **Next**: Real-device round trip on the tailnet (`kaow pair` → scan → chat → screenshot);
+  E2E encryption (Phase 2 hardening); power management wiring.
 - **Constraints**: 300 LOC/file, modular-first, no silent failures, container-first
 
 ## Plans Log
@@ -31,6 +32,16 @@
 - D-204 ACTIVE: register_device RPC is SECURITY DEFINER (upsert by user_id + name) [CODE] 2026-09-15
 - D-206 ACTIVE: Mobile pins Compose BOM 2026.06.01, core-ktx 1.18.0, lifecycle 2.10.0,
   compileSdk 36 (newer androidx needs AGP 9.1 + compileSdk 37) [CODE] 2026-09-16
+- D-207 ACTIVE: FULL TAILSCALE TRANSPORT — phone connects directly to PC daemon over
+  a tailnet (magic DNS + WS + Bearer token). No user data in any cloud project.
+  Supersedes D-201..D-205. D-201..D-204 now marked SUPERSEDED (relay code removed).
+  [USER] 2026-09-16
+- D-208 ACTIVE: conversation history is a daemon-local SQLite transcript
+  (`~/.kaow/transcript.db`, `KAOW_DATA_DIR`); mobile fetches it via `history_result`.
+  [DESIGN] 2026-09-16
+- D-209 ACTIVE: pairing is a QR code printed by `kaow pair` containing
+  `ws://<tailnet-address>:<port>/ws?token=<auth_token>`; mobile scans/stores it
+  locally (zxing ScanContract). [DESIGN] 2026-09-16
 
 ## Progress Log
 - 2026-09-15 [CODE]: Git repo initialized, .gitignore, LICENSE, .env.example
@@ -85,6 +96,34 @@
   realtime via `client.realtime` + `channel(...)` imports, `HasRecord.decodeRecord<T>()`
 - 2026-09-16 [CODE]: `:app:assembleDebug` GREEN — app-debug.apk (16 MB). BUILT against
   empty Supabase creds; app shows ConfigErrorScreen until -P vars provided.
+- 2026-09-16 [USER]: Full Tailscale pivot (D-207) — phone↔PC direct over tailnet,
+  no user data in operator Supabase; Supabase relay code kept dormant. PHASE2.md superseded.
+- 2026-09-16 [CODE]: Relay removed from daemon — deleted `relay/` + test_relay.py,
+  stripped RelayMode/KAOW_SUPABASE_*/KAOW_DEVICE_* from config.py, relay wiring from
+  main.py/server/app.py (incl. bridge + task_queued), `supabase` dep dropped from
+  pyproject (uv.lock relocked). pyproject cleanup: unified dev deps into
+  [dependency-groups] (pytest/ruff/mypy/httpx2/types-*) — `uv sync --dev` installs all.
+- 2026-09-16 [CODE]: daemon/src/kaow/transcript/ — SqliteTranscriptStore (thread-local
+  sqlite3, tables tasks/outputs, record_command/append_output/update_status/history).
+- 2026-09-16 [CODE]: protocol.py + app.py — `history`/`history_result` messages
+  (limit 1..500, reply to requesting socket), commands persisted + every chunk
+  persisted (seq counter), terminal status updates (completed/killed/failed).
+- 2026-09-16 [CODE]: daemon/src/kaow/pair.py — `kaow-pair` CLI: Tailscale IP detect
+  (psutil, 100.64.0.0/10), builds ws URL + token, prints ASCII QR via `qrcode`.
+- 2026-09-16 [CODE]: Daemon verification — 43 tests pass, ruff + mypy clean.
+  Added tests: test_transcript.py (store CRUD/history) + history e2e in test_integration.py.
+- 2026-09-16 [CODE]: Mobile deps — dropped supabase-bom/auth/postgrest/realtime;
+  added ktor-client-websockets + zxing-android-embedded 4.3.0; removed BuildConfig
+  SUPABASE fields.
+- 2026-09-16 [CODE]: mobile net/ — DaemonProtocol (envelope parse/build), DirectRelay
+  (ktor WS client, reconnect w/ backoff, status + events flows), ConnectionStore
+  (SharedPreferences base_url + token).
+- 2026-09-16 [CODE]: Mobile UI — PairScreen (zxing ScanContract QR + manual entry,
+  PairingCode parse of ws://…?token=), KaowRoot pairing gate + FAILED connection bar
+  (Retry/Re-pair), Chat/Dashboard VMs rewired to relay events, banners show
+  connection status. `:app:assembleDebug` GREEN, no warnings.
+- 2026-09-16 [CODE]: Docs — README/ARCHITECTURE/AGENTS/PHASE1/PHASE2/PHASE6/API updated to
+  Tailscale-direct model; `supabase/` migrations + seed deleted (dead after D-207).
 
 ## Discoveries Log
 - 2026-09-15 [TOOL]: `loop.run_in_executor(loop, func, kwarg=...)` does NOT forward kwargs —
