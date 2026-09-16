@@ -6,6 +6,8 @@ import pytest
 
 from kaow.adapters.base import AdapterError, CLIAdapter
 from kaow.adapters.claude import ClaudeAdapter
+from kaow.adapters.opencode import OpenCodeAdapter
+from kaow.config import CLIAdapterType
 
 
 class TestCLIAdapterBase:
@@ -51,3 +53,30 @@ class TestClaudeAdapter:
         adapter = ClaudeAdapter()
         result = await adapter.kill("any-task-id")
         assert result is False
+
+
+class TestOpenCodeAdapter:
+    """Tests for the opencode CLI adapter."""
+
+    def test_default_path(self) -> None:
+        """Default CLI path is 'opencode'."""
+        assert OpenCodeAdapter()._cli_path == "opencode"
+
+    @pytest.mark.asyncio
+    async def test_health_check_no_binary(self) -> None:
+        """Health check returns False when CLI binary not found."""
+        adapter = OpenCodeAdapter(cli_path="/nonexistent/binary")
+        result = await adapter.health_check()
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_execute_no_binary_raises(self) -> None:
+        """Execute raises AdapterError when CLI binary not found."""
+        adapter = OpenCodeAdapter(cli_path="/nonexistent/binary")
+        with pytest.raises(AdapterError, match="not found"):
+            async for _ in adapter.execute("test prompt"):
+                pass
+
+    def test_adapter_enum_value(self) -> None:
+        """The opencode adapter type string matches the config enum."""
+        assert CLIAdapterType.OPENCODE.value == "opencode"

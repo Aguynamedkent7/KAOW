@@ -11,6 +11,15 @@ class CLIAdapterType(StrEnum):
 
     CLAUDE = "claude"
     OPENDEVIN = "opendevin"
+    OPENCODE = "opencode"
+
+
+class CaptureMode(StrEnum):
+    """Which X11 server screenshots should be taken from."""
+
+    AUTO = "auto"
+    VIRTUAL = "virtual"
+    REAL = "real"
 
 
 class Settings(BaseSettings):
@@ -22,10 +31,10 @@ class Settings(BaseSettings):
     port: int = Field(default=8765, description="WebSocket server port")
     auth_token: str = Field(..., description="Bearer token for local WS auth")
     cli_adapter: CLIAdapterType = Field(
-        default=CLIAdapterType.CLAUDE,
+        default=CLIAdapterType.OPENCODE,
         description="Which AI CLI adapter to use",
     )
-    cli_path: str = Field(default="claude", description="Path to the AI CLI binary")
+    cli_path: str = Field(default="opencode", description="Path to the AI CLI binary")
     display_resolution: str = Field(
         default="1920x1080",
         description="Virtual display resolution (WxH)",
@@ -33,6 +42,10 @@ class Settings(BaseSettings):
     screenshot_interval: int = Field(
         default=5,
         description="Seconds between automatic screenshots",
+    )
+    capture_mode: CaptureMode = Field(
+        default=CaptureMode.AUTO,
+        description="Screenshot source: auto = real display first, virtual fallback",
     )
     log_level: str = Field(default="INFO", description="Logging level")
 

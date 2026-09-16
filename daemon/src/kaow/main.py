@@ -8,6 +8,7 @@ import signal
 from typing import TYPE_CHECKING
 
 from kaow.adapters.claude import ClaudeAdapter
+from kaow.adapters.opencode import OpenCodeAdapter
 from kaow.adapters.opendevin import OpenDevinAdapter
 from kaow.config import CLIAdapterType, Settings, load_settings
 from kaow.display.xvfb import XvfbDisplay
@@ -28,6 +29,7 @@ def create_adapter(settings: Settings) -> CLIAdapter:
     adapters: dict[CLIAdapterType, Callable[[], CLIAdapter]] = {
         CLIAdapterType.CLAUDE: lambda: ClaudeAdapter(settings.cli_path),
         CLIAdapterType.OPENDEVIN: lambda: OpenDevinAdapter(settings.cli_path),
+        CLIAdapterType.OPENCODE: lambda: OpenCodeAdapter(settings.cli_path),
     }
     factory = adapters.get(settings.cli_adapter)
     if factory is None:
@@ -40,6 +42,7 @@ def create_display(settings: Settings) -> DisplayManager:
     return XvfbDisplay(
         width=settings.display_width,
         height=settings.display_height,
+        capture_mode=settings.capture_mode,
     )
 
 

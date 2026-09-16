@@ -2,7 +2,7 @@
 
 ## Project Overview
 KAOW (Kents AI Officiated Workflow) is a multi-user system where a phone app
-remotely controls a PC daemon wrapping AI CLIs (Claude, OpenDevin) for
+remotely controls a PC daemon wrapping AI CLIs (Claude, OpenDevin, opencode) for
 headless automation.
 
 **Flow**: Phone → PC Daemon (direct Tailscale WS) → AI CLI → Virtual Display → Screenshots

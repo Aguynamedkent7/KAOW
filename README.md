@@ -17,7 +17,7 @@ Phone (Kotlin/Compose) → PC Daemon (direct Tailscale WS) → AI CLI → Virtua
 
 - **Headless automation** — your PC needs no monitor, keyboard, or mouse. A virtual display (Xvfb) gives the AI screen real estate to interact with GUI apps.
 - **Remote from anywhere** — trigger tasks from your phone's lock screen. Offline commands queue and execute when the connection returns.
-- **AI-agnostic** — pluggable adapters for Claude CLI, OpenDevin, or any future CLI. Swap via one config value.
+- **AI-agnostic** — pluggable adapters for Claude CLI, OpenDevin, or opencode. Swap via one config value (`KAOW_CLI_ADAPTER`).
 - **Full history** — every conversation, screenshot, and log is persisted for replay and audit.
 - **Privacy-first** — designed with end-to-end encryption between your phone and PC (planned Phase 2).
 
@@ -47,7 +47,7 @@ KAOW/
 ├── daemon/                 # The PC agent (Python 3.11+, FastAPI, uv)
 │   ├── src/kaow/
 │   │   ├── server/         # WebSocket server, auth, message protocol
-│   │   ├── adapters/       # AI CLI wrappers (Claude, OpenDevin)
+│   │   ├── adapters/       # AI CLI wrappers (Claude, OpenDevin, opencode)
 │   │   ├── display/        # Xvfb virtual display + screenshot capture
 │   │   ├── telemetry/      # CPU/RAM/disk/process monitoring
 │   │   ├── queue/          # Offline command buffering

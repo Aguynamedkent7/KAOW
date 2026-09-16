@@ -5,7 +5,7 @@ Build the Kotlin/Jetpack Compose mobile app and connect it **directly** to the P
 daemon over a Tailscale tailnet (WireGuard / DERP fallback). No cloud relay, no
 operator-hosted project: user data stays entirely on the user's phone + PC.
 
-## Status: IN PROGRESS (daemon relay removed, direct WS transport + QR pairing done, E2E pending)
+## Status: IN PROGRESS (transport + QR pairing done, live tailnet round-trip in progress, opencode default)
 
 ## Completed Tasks
 - [x] Design database schema (devices, commands, command_outputs, screenshots) — superseeded, DB unused
@@ -25,12 +25,20 @@ operator-hosted project: user data stays entirely on the user's phone + PC.
 - [x] QR pairing screen (scan or manual entry) + settings persistence
       (`net/ConnectionStore`); connection status banner + Re-pair/Retry on failure
 - [x] Daemon test suite green (43 tests), ruff + mypy clean; mobile `assembleDebug` green
+- [x] Real-display capture fallback: `KAOW_CAPTURE_MODE=auto|virtual|real` — in `auto`,
+      screenshots come from the user's real X11 display (`:0` etc.) when detected,
+      falling back to the Xvfb virtual framebuffer; default opencode CLI adapter
 
 ## Planned Tasks
 - [ ] Test bidirectional communication over the internet (tailnet roam / DERP)
+- [ ] Wayland real-display capture: install `grim`, add `_capture_with_grim()` to screenshot.py —
+      `auto` mode now warns "real display capture failed" (X11 import can't grab Wayland surfaces)
+- [ ] DirectRelay robustness: WS keepalive ping, recoverable DISCONNECTED state, backoff cap
+      (observed: app can revert to Pair screen mid-session; reconnect churn after normal exit)
 - [ ] E2E encryption for screenshots and logs
 - [ ] Power management screen wired to real daemon endpoints
-- [ ] Real-device round trip: `kaow pair` → scan → chat → screenshot
+- [x] Real-device round trip: `kaow pair` → scan → chat → screenshot (pairing verified live;
+      chat execution via opencode still pending)
 
 ## Dependencies
 - Phase 1 complete (daemon with WebSocket server)
@@ -39,11 +47,14 @@ operator-hosted project: user data stays entirely on the user's phone + PC.
 - Daemon bound to tailnet interface (plain `ws` — encrypted by WireGuard itself)
 
 ## Known Risks
+- **Wayland hosts**: `import`/`scrot`/Xlib capture grab the XWayland root only — native Wayland
+  apps are invisible. Mitigation: `grim` for wlroots compositors; virtual display for headless.
 - Mobile app WebSocket handling on background/foreground transitions
 - Screenshot payload size over DERP relay (Tailscale fallback) on cellular
 - TLS for the daemon WS (`wss`) not needed over WireGuard; cert provisioning for
   tailnet addresses left for a later phase if the user wants it
-- First-run: user must install + sign into Tailscale (extra install step)
+- First-run: user must install + sign into Tailscale (extra install step) — Phase 5 bootstrap
+  automates this (plan agreed, code pending)
 
 ## Decisions
 - D-201 SUPERSEDED: connection modes now `local` (WS only) is the product; the

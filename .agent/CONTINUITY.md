@@ -2,12 +2,20 @@
 
 ## Snapshot
 - **Goal**: Build KAOW — phone-controlled PC daemon wrapping AI CLIs
-- **Current Phase**: Phase 2 — P2P Mobile App; transport is Tailscale direct (D-207)
-- **Now**: Daemon relay fully removed; local SQLite transcript + `history`/`history_result`
-  + `kaow pair` QR CLI shipped (43 tests green). Mobile data layer rewritten to a direct
-  WebSocket transport (`net/DirectRelay`) with QR pairing screen; `assembleDebug` green.
-- **Next**: Real-device round trip on the tailnet (`kaow pair` → scan → chat → screenshot);
-  E2E encryption (Phase 2 hardening); power management wiring.
+- **Current Phase**: Phase 2 — P2P Mobile App; transport + pairing shipped, capture mode added
+- **Now**: Daemon + mobile live on Tailscale tailnet (real-device pairing verified; `544fe00`).
+  Capture mode auto tries real X11 desktop first, Xvfb fallback — but real capture fails on
+  Wayland (user's session: `XDG_SESSION_TYPE=wayland`, `DISPLAY=:1` XWayland). `import` (ImageMagick)
+  can't capture Wayland surfaces. `grim` not installed. daemon/.env currently has
+  `KAOW_CAPTURE_MODE=auto` but user may want `virtual` to suppress noise until Wayland support added.
+  opencode is now the default CLI adapter. 53 tests green, lint clean.
+- **Next**:
+  1. Fix Wayland capture: install `grim` (`sudo pacman -S grim`), add `_capture_with_grim()` to screenshot.py
+     (needs Wayland socket path `$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY`)
+  2. Round-trip test: pair → scan → chat → opencode run execution
+  3. DirectRelay keepalive/robustness (ping, recoverable DISCONNECTED state, backoff cap)
+  4. Phase 5 zero-touch bootstrap (plan only — write to docs/PHASE5.md)
+  5. E2E encryption; power management wiring
 - **Constraints**: 300 LOC/file, modular-first, no silent failures, container-first
 
 ## Plans Log
@@ -20,16 +28,18 @@
 ## Decisions Log
 - D001 ACTIVE: Python daemon with FastAPI + WebSockets [USER] 2026-09-15
 - D002 ACTIVE: Pluggable AI CLI adapter (Claude + OpenDevin) [USER] 2026-09-15
+- D002a ACTIVE: opencode added as third CLI adapter; now the DEFAULT (opencode run) [CODE] 2026-09-16
 - D003 ACTIVE: 1 phone ↔ 1 PC daemon model [USER] 2026-09-15
-- D004 ACTIVE: Full conversation persistence in Supabase [USER] 2026-09-15
+- D004 SUPERSEDED: Supabase conversation persistence replaced by daemon-local SQLite transcript (D-208) [SUPERSEDED]
 - D005 ACTIVE: MIT license [USER] 2026-09-15
 - D006 ACTIVE: Phase 5 = zero-touch installers (curl/irm one-liner), Phase 6 = QR pairing [USER] 2026-09-15
 - D007 ACTIVE: mypy strict mode; add test/type stubs as deps (types-psutil, types-python-xlib) [CODE] 2026-09-15
 - D008 ACTIVE: Git flow per task = feature branch → staging → main (promote to main only on release) [USER] 2026-09-15
-- D-201 ACTIVE: Three relay modes: local/cloud/both via KAOW_RELAY_MODE [CODE] 2026-09-15
-- D-202 ACTIVE: Daemon uses service_role key to bypass RLS; mobile uses anon key [CODE] 2026-09-15
-- D-203 ACTIVE: Screenshots stored as base64 in command_outputs/supabase; revisit Storage in Phase 3+ [CODE] 2026-09-15
-- D-204 ACTIVE: register_device RPC is SECURITY DEFINER (upsert by user_id + name) [CODE] 2026-09-15
+- D-201 SUPERSEDED: relay modes no longer exist; code removed. [SUPERSEDED by D-207]
+- D-202 SUPERSEDED: relay code removed; no Supabase auth flow. [SUPERSEDED by D-207]
+- D-203 SUPERSEDED: screenshots/transcripts live on the daemon. [SUPERSEDED by D-207]
+- D-204 SUPERSEDED: no server-side device registry. [SUPERSEDED by D-207]
+- D-205 SUPERSEDED: pairing is a daemon-paired QR over tailnet. [SUPERSEDED by D-207]
 - D-206 ACTIVE: Mobile pins Compose BOM 2026.06.01, core-ktx 1.18.0, lifecycle 2.10.0,
   compileSdk 36 (newer androidx needs AGP 9.1 + compileSdk 37) [CODE] 2026-09-16
 - D-207 ACTIVE: FULL TAILSCALE TRANSPORT — phone connects directly to PC daemon over
@@ -42,6 +52,9 @@
 - D-209 ACTIVE: pairing is a QR code printed by `kaow pair` containing
   `ws://<tailnet-address>:<port>/ws?token=<auth_token>`; mobile scans/stores it
   locally (zxing ScanContract). [DESIGN] 2026-09-16
+- D-210 ACTIVE: capture mode (`KAOW_CAPTURE_MODE=auto|virtual|real`) — auto reads
+  from the user's real X11 display (`:0` etc.) when detected, falling back to the
+  Xvfb virtual framebuffer; real mode enforces real display only. [CODE] 2026-09-16
 
 ## Progress Log
 - 2026-09-15 [CODE]: Git repo initialized, .gitignore, LICENSE, .env.example
@@ -124,6 +137,15 @@
   connection status. `:app:assembleDebug` GREEN, no warnings.
 - 2026-09-16 [CODE]: Docs — README/ARCHITECTURE/AGENTS/PHASE1/PHASE2/PHASE6/API updated to
   Tailscale-direct model; `supabase/` migrations + seed deleted (dead after D-207).
+- 2026-09-16 [CODE]: Capture mode (D-210) — `KAOW_CAPTURE_MODE=auto|virtual|real` added
+  to config; `XvfbDisplay` detects ambient DISPLAY before clobbering; in `auto` mode
+  screenshots come from the real X11 desktop when present, Xvfb virtual fallback.
+  opencode now the default CLI adapter. 53 tests, ruff + mypy clean.
+- 2026-09-16 [CODE]: opencode adapter — `adapters/opencode.py` (opencode run, kill all,
+  health_check via --version), registered in config/main factory. 53 tests pass.
+- 2026-09-16 [TEST]: Live Tailscale test on user's machine — phone (100.113.131.8) scanned QR,
+  connected, persisted pairing across force-quit. Dashboard shows Xvfb :99 (blue root).
+  No live chat command sent yet — opencode round-trip is next.
 
 ## Discoveries Log
 - 2026-09-15 [TOOL]: `loop.run_in_executor(loop, func, kwarg=...)` does NOT forward kwargs —
@@ -135,9 +157,26 @@
   not sync `create_client()`. The runtime event parameter for `on_postgres_changes` is
   `RealtimePostgresChangesListenEvent.Insert` (capitalized), and the TypedDict payload is
   accessed via `payload.get("data", {}).get("record", {})` rather than attribute access.
+- 2026-09-16 [TOOL]: User shell is fish; `sudo pacman -S ` needs a terminal, cannot run from agent
+  (no TTY) — user must install packages. Arch has no `tailscale.service`, only `tailscaled.service`.
+- 2026-09-16 [TOOL]: User session is WAYLAND (`XDG_SESSION_TYPE=wayland`) — `import`/`scrot` (X11)
+  cannot capture Wayland surfaces; need `grim` (wlroots) + Wayland socket path. `import` IS installed.
+- 2026-09-16 [TOOL]: Xvfb display is :99 (1920x1080x24); real X display is :0 (native) and :1
+  (XWayland); `pgrep -a Xvfb` confirms. `xsetroot -solid <color>` on :99 proves Dashboard renders.
+- 2026-09-16 [TOOL]: Mobile app can't stay paired after scanning — pairing persists on disk but
+  UI reverted to Pair screen mid-session; direct WS reconnect churn observed. Needs keepalive fix.
 
 ## Outcomes Log
 - 2026-09-15 [CODE]: Phase 1 daemon complete — shipped as `5ca360c` + `56e4164`
   (initial scaffold + CI/README). CI passes (ruff, mypy, pytest). Published on GitHub.
 - 2026-09-15 [CODE]: Phase 2 daemon relay complete — schema written, relay module built and tested,
   ready to apply migrations to a live Supabase project. Mobile deferred pending toolchain.
+
+## Uncommitted Work (as of session end 2026-09-16)
+- **Not yet committed**: opencode adapter (`adapters/opencode.py`, config default change),
+  capture mode (D-210), `.env.example` capture-mode entry, test additions, PHASE5.md full
+  plan-only rewrite, PHASE2.md status/risks update. Work is on branch
+  `feat/mobile-skeleton`. Last commit `544fe00` was the Tailscale route. Need to commit these.
+- **Pending user action**: `sudo pacman -S grim` for Wayland capture support.
+- **daemon/.env**: created from `.env.example` copy, has real auth token (d661e2...); adapter set
+  to `opencode`, capture mode still `auto` (may want `virtual` to silence warnings until grim).
